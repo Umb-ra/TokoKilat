@@ -137,3 +137,53 @@ Tanggal dan hash commit entri ini: 2026-10-13
   1. Banner promo tampil sebagai kontainer kosong berwarna biru gelap selama ~1.8 detik sebelum teks dan tombol muncul. Secara UX ini trade-off yang jauh lebih baik daripada konten mendadak loncat turun dan memicu salah klik iklan.
   2. Judul produk yang hanya 1 baris memiliki sedikit ruang kosong ekstra di bawahnya karena min-height 3.8em disesuaikan untuk mengakomodasi judul hingga 3 baris. Tapi kartu-kartu dalam satu baris grid jadi sejajar rapi secara konsisten tanpa penalti performa JS.
   3. Semua fungsionalitas banner (klik promo, toast info, pelacakan event promo_click di SDK analitik) tetap bekerja normal.
+
+---
+
+## P-02: Layar beku saat pakai voucher
+
+Tiket terkait: TK-1057
+Tanggal dan hash commit entri ini: 2026-10-13
+
+### Sebelum perbaikan
+
+- Yang teramati di trace (baseline):
+  Di rekaman S4 (klik "Pakai voucher" dengan kode KILAT1212, lalu coba ketik di kolom cari), track Interactions menunjukkan satu interaksi Pointer dengan durasi 1.81 detik (input delay 14ms, processing duration 1697ms, presentation delay 97ms). Di flame chart, ada satu blok Task raksasa yang membentang dari detik ke-2.5 sampai ke-4.5. Di dalamnya terlihat Event: click -> Run microtasks -> terapkanVoucher yang memakan seluruh durasi tanpa jeda.
+
+  Di tab Bottom-Up, fungsi yang mendominasi: Layout (584ms, 33.3%), simulasiCicilan dari harga-promo.js:14:25 (395ms, 22.5%), formatRupiah (211ms, 12%), get offsetHeight (95.5ms, 5.4%), dan Recalculate style (69.7ms, 4%). Dari alat ukur, median INP 1824ms (target <= 200ms), long task terlama 1808ms, dan total waktu blokir 8678ms. Selama perhitungan berlangsung, progress bar tidak pernah bergerak (langsung loncat dari 0% ke 100%) dan kolom cari tidak bisa diketik.
+
+- Dugaan mekanisme:
+  Di harga-promo.js, fungsi terapkanVoucher (baris 42-73) melakukan loop for-of atas seluruh produk (3000 buah). Setiap iterasi memanggil await hitungHargaPromo(produk, aturan) yang di-mark async (baris 31). Komentar Rudi di baris 30 berbunyi "Dibuat async supaya perhitungan tidak memblokir halaman."
+
+  Masalahnya: hitungHargaPromo tidak mengandung operasi asinkron sejati (tidak ada fetch, setTimeout, atau I/O). Fungsi ini hanya melakukan komputasi sinkron (hitungHargaPromo -> simulasiCicilan 41 kali per produk). Karena tidak ada operasi asinkron di dalamnya, fungsi async ini langsung return resolved promise. Saat kita await sebuah resolved promise, kelanjutannya dijadwalkan sebagai microtask.
+
+  Microtask dieksekusi segera setelah task saat ini selesai, sebelum browser mendapat rendering opportunity. Artinya: seluruh 3000 iterasi for-of berjalan sebagai rangkaian microtask yang tak terputus di satu task queue turn. Browser tidak pernah mendapat kesempatan untuk menjalankan tahap Style -> Layout -> Paint -> Composite di antara iterasi. Akibatnya:
+  1. Progress bar tidak pernah diperbarui secara visual (penulisan isi.style.width dan teks.textContent masuk ke DOM tapi browser tidak pernah menggambarnya).
+  2. Kolom cari tidak merespons input karena event handler keyboard menunggu di task queue, tapi task saat ini (yang berisi ribuan microtask) belum selesai.
+  3. INP membengkak ke 1824ms karena dari sudut pandang browser, klik "Pakai voucher" sampai frame berikutnya ter-render memakan waktu segitu.
+
+  Selain itu, di setiap iterasi fungsi hitungHargaPromo memanggil simulasiCicilan 41 kali (baris 37: loop 40 kali untuk "cek kestabilan pembulatan" + 1 kali di baris 38). Setiap panggilan simulasiCicilan punya nested loop (tenor 1-24, bulan 1-tenor), jadi total iterasi inner loop per produk sekitar 41 × (24 × 12.5) = ~12.300 kali. Dikalikan 3000 produk = ~37 juta iterasi. Ini yang membuat processing duration mencapai 1697ms.
+
+- Rencana perubahan:
+  1. Pecah loop perhitungan menjadi chunk (misal 100 produk per chunk). Setelah setiap chunk, sisipkan yield ke main thread lewat mekanisme yang memberikan rendering opportunity (setTimeout(0) atau scheduler.yield()). setTimeout(0) menjadwalkan kelanjutan sebagai task baru, bukan microtask, sehingga browser punya kesempatan menggambar di antara chunk.
+  2. Progress bar jadi update bertahap per chunk karena browser mendapat rendering opportunity setelah setiap chunk selesai.
+  3. Kolom cari tetap responsif karena event handler keyboard bisa masuk di sela-sela chunk.
+
+- Prediksi terukur:
+  Setelah perubahan, INP pada S4 turun dari ~1824ms menjadi di bawah 200ms (target tugas). Long task terlama turun dari 1808ms ke sekitar 50-100ms per chunk. Progress bar bergerak bertahap secara visual dari 0% ke 100%. Kolom cari tetap bisa diketik selama perhitungan berjalan.
+
+  Total waktu perhitungan mungkin sedikit lebih lama dari sebelumnya karena overhead yield (setiap setTimeout menambah delay minimal ~4ms). Tapi perbedaannya kecil dan trade-off-nya sangat layak: pengguna melihat progres dan bisa berinteraksi, dibandingkan layar beku 1.8 detik.
+
+  Prediksi efek samping: kalau ukuran chunk terlalu kecil (misal 1 produk per chunk), overhead yield jadi signifikan dan total waktu perhitungan bisa jauh lebih lama. Kalau chunk terlalu besar (misal 1000 produk), masih ada long task yang terasa. Perlu cari titik tengah yang tepat.
+
+- Alternatif yang dipertimbangkan dan alasan tidak dipilih:
+  1. Kenapa tidak pakai Web Worker? Web Worker memindahkan komputasi ke thread terpisah sehingga main thread benar-benar bebas. Tapi trade-off-nya: data produk harus ditransfer via structured clone (3000 objek), lalu hasilnya ditransfer balik. Ini menambah kompleksitas (file worker terpisah, message passing) dan tugas menyebutkan "tanpa framework, library, atau bundler". Untuk kasus ini chunking dengan setTimeout sudah cukup menyelesaikan masalah.
+  2. Kenapa tidak cukup kurangi jumlah simulasiCicilan dari 41 ke 1? Memang akan mempercepat komputasi, tapi loop 40 kali itu disebut "cek kestabilan pembulatan" yang merupakan aturan bisnis. Menghapusnya bisa mengubah hasil perhitungan. Lagipula, meski komputasi dipercepat, tanpa yield browser tetap tidak mendapat rendering opportunity (microtask tetap memblokir). Chunking menyelesaikan akar masalahnya: browser butuh rendering opportunity, bukan komputasi yang lebih cepat.
+  3. Kenapa tidak pakai requestIdleCallback? rIC memang memberikan rendering opportunity, tapi dipanggil saat browser sedang idle dengan deadline yang pendek. Untuk komputasi yang harus selesai dalam waktu wajar, setTimeout(0) lebih prediktif karena dijadwalkan segera setelah rendering opportunity, bukan menunggu idle.
+
+### Sesudah perbaikan
+
+- Hash commit perbaikan: ....
+- Hasil ukur (median 3 kali): ....
+- Prediksi vs kenyataan: ....
+- Efek samping: ....
