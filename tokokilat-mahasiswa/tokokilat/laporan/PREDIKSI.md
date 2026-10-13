@@ -68,3 +68,47 @@ bagian "sebelum" setelah hasilnya diketahui; bila prediksi meleset, jelaskan di 
   1. Angka hundredths secara visual ga ada bedanya. Sebelumnya update 100x/detik via setInterval, sekarang ~60x/detik lewat rAF. Perbedaannya ga terasa di mata.
   2. Kecepatan teks berjalan sedikit beda dari versi JS karena durasi CSS animation di-set 15 detik per siklus, sedangkan versi JS tergantung lebar parent. Tapi secara visual tetap mulus.
   3. Semua fitur tetap jalan normal, ga ada yang hilang atau rusak.
+
+---
+
+## P-05: Halaman loncat saat dimuat
+
+Tiket terkait: TK-1078
+Tanggal dan hash commit entri ini: 2026-10-13
+
+### Sebelum perbaikan
+
+- Yang teramati di trace (baseline):
+  Di rekaman S0 (muat halaman, diam 10 detik), track Layout Shifts menunjukkan ada layout shift besar di sekitar detik ke-9.5. Di panel Summary, shift score-nya 0.1369 dan elemen yang bergeser adalah div id=alat, div id=kisi, dan p id=ringkasan. Culprit-nya ditunjukkan sebagai "Unsized image: 1.svg". CLS total dari alat ukur konsisten 0.473 di ketiga pengukuran (jauh di atas target 0.1).
+
+  Di screenshot S0-pasangbannerpromo.png terlihat bahwa banner promo disisipkan lewat prepend ke elemen utama setelah API /api/promo selesai (delay sekitar 1800ms). Saat banner masuk, semua konten yang sudah di-render (alat, kisi produk, ringkasan) tergeser ke bawah. Ini persis yang dikeluhkan Kak Rara, mau pencet barang tapi halamannya loncat dan yang kepencet malah iklan promo.
+
+  Di screenshot S0-samakantinggijudul.png terlihat fungsi samakanTinggiJudul di katalog.js yang menulis style.height di elemen kartu-judul yang sudah ter-render. Ini juga bikin layout shift tambahan karena mengubah dimensi elemen setelah browser sudah menghitung layout awal.
+
+- Dugaan mekanisme:
+  Ada dua penyebab layout shift:
+
+  Penyebab pertama (banner promo, promo.js baris 51-66): fungsi pasangBannerPromo melakukan fetch ke /api/promo yang sengaja lambat (delay 1800ms dari server). Selama menunggu, halaman sudah selesai render produk. Saat response akhirnya datang, banner dibuat dan di-prepend ke elemen utama. Prepend artinya disisipkan di posisi paling atas, sehingga semua konten di bawahnya (toolbar, kisi produk, ringkasan) tergeser turun. Ini menghasilkan layout shift besar karena pergeserannya mempengaruhi banyak elemen sekaligus.
+
+  Penyebab kedua (samakan tinggi judul, katalog.js baris 67-78): fungsi samakanTinggiJudul dipanggil di renderProduk setelah semua kartu sudah di-append ke DOM. Fungsi ini membaca offsetHeight (forced reflow) lalu langsung menulis style.height di loop. Setelah loop, semua judul di-set ke tinggi yang sama. Ini mengubah dimensi elemen yang sudah ter-render -> layout shift tambahan.
+
+- Rencana perubahan:
+  1. Banner promo: reservasi ruang di HTML untuk banner sebelum halaman dimuat. Tambahkan elemen placeholder dengan min-height yang sesuai (sekitar 132px, sesuai CSS .promo-banner). Saat data promo datang, isi placeholder tersebut alih-alih prepend elemen baru. Dengan begitu tidak ada konten yang bergeser karena ruangnya sudah disediakan sejak awal.
+  2. Samakan tinggi judul: daripada mengukur dan menulis height satu per satu di loop (layout thrashing), kumpulkan dulu semua pengukuran, cari yang tertinggi, baru tulis sekaligus. Atau lebih baik lagi, gunakan CSS saja (min-height atau flexbox) supaya ga perlu JS sama sekali untuk menyamakan tinggi.
+
+- Prediksi terukur:
+  Setelah perubahan, CLS turun dari 0.473 menjadi di bawah 0.1 (target tugas). Layout shift dari banner promo seharusnya hilang sepenuhnya karena ruangnya sudah disiapkan. Layout shift dari samakanTinggiJudul juga berkurang atau hilang.
+
+  Prediksi efek samping: kalau API promo gagal atau responsnya beda ukuran dari yang disiapkan, bisa ada ruang kosong sementara atau sedikit pergeseran saat banner terisi. Tapi ini jauh lebih baik daripada pergeseran besar yang sekarang terjadi.
+
+- Alternatif yang dipertimbangkan dan alasan tidak dipilih:
+  1. Kenapa tidak sembunyikan banner sepenuhnya sampai data siap? Karena itu berarti banner tetap muncul tiba-tiba dan menggeser konten, cuma waktunya ditunda. Masalah layout shift-nya ga hilang, cuma tertunda.
+  2. Kenapa tidak taruh banner di bawah produk supaya ga ganggu? Karena tugas menyebutkan fitur harus tetap ada dan posisinya boleh disesuaikan tapi harus ada alasan. Menaruh banner di bawah mengurangi visibilitas promo, yang mungkin ga disetujui bisnis. Reservasi ruang di atas lebih tepat karena tetap mempertahankan posisi tanpa mengorbankan UX.
+  3. Kenapa tidak pakai skeleton screen (kotak abu-abu placeholder)? Skeleton screen sebenarnya solusi yang bagus dan bisa dipakai. Tapi untuk kasus ini, cukup reservasi ruang dengan min-height sudah menyelesaikan masalah CLS. Skeleton screen menambah kompleksitas yang belum tentu perlu.
+
+### Sesudah perbaikan
+
+- Hash commit perbaikan: ....
+- Hasil ukur (median 3 kali): ....
+- Prediksi vs kenyataan: ....
+- Efek samping: ....
