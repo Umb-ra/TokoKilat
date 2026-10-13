@@ -40,7 +40,31 @@ bagian "sebelum" setelah hasilnya diketahui; bila prediksi meleset, jelaskan di 
 
 ### Sesudah perbaikan
 
-- **Hash commit perbaikan:** ....
-- **Hasil ukur (median 3 kali):** ....
-- **Prediksi vs kenyataan:** tepat, meleset, atau sebagian? Bila meleset, apa yang salah dari model mental Anda?
-- **Efek samping yang muncul:** ....
+- Hash commit perbaikan: 369d6d7
+
+- Hasil ukur (median 3 kali, tanpa CPU throttling):
+
+  Sebelum -> Sesudah:
+  - frameLambat: 271 -> 163 (turun 40%)
+  - frameTerburuk: 1260ms -> 206ms (turun 84%)
+  - jumlahLongTask: 156 -> 132 (turun 15%)
+  - totalBlokir: 4593ms -> 3109ms (turun 32%)
+
+  Dari trace:
+  - TimerFire: 265 -> 11 (turun 96%)
+  - requestAnimationFrame: 140 -> 316 (naik, memang diharapkan karena rAF menggantikan setInterval)
+
+  Di screenshot flame chart sebelum perbaikan (S6-idle-overview.png), track Main penuh sesak dengan balok-balok kuning kecil yang mepet tanpa jeda dari detik 1 sampai 12. Kalau di-search "timer" di panel Performance, muncul 265 hasil Timer fired, masing-masing berdurasi sekitar 20ms dan memicu Scripting 7ms + Rendering 2ms + System 12ms.
+
+  Sesudah perbaikan (After-S6-idle-overview.png), track Main terlihat jauh lebih lega. Ada banyak ruang kosong antar task. Kalau di-search "timer", cuma muncul 11 hasil, dan durasinya cuma 0.59ms per Timer fired (kemungkinan dari SDK analitik, bukan dari promo.js lagi). Aktivitas yang tersisa di main thread sebagian besar adalah callback rAF (fungsi perbarui) yang berjalan ~30 kali per detik untuk update angka hitung mundur.
+
+- Prediksi vs kenyataan: sebagian tepat, sebagian meleset.
+
+  Dugaan bahwa setInterval 10ms di promo.js jadi penyebab utama main thread ga pernah idle ternyata benar. Setelah diganti rAF dan CSS animation, TimerFire turun dari 265 ke 11 (96%). Flame chart sesudah perbaikan keliatan jauh lebih lega dibanding sebelumnya. frameTerburuk juga turun dari 1260ms ke 206ms (84%).
+
+  Tapi prediksi frameLambat turun ke 0-2 per 10 detik ternyata meleset, kenyataannya masih 163. Setelah dilihat lagi di trace, ternyata masih ada script lain yang jalan di main thread saat idle, terutama fungsi pantauFrame (dari alat ukur) dan fungsi gambar (kemungkinan dari lazy loading atau observer di script lain). Jadi promo.js memang sumber utama timer, tapi bukan satu-satunya penyebab frame lambat. Script lain yang belum disentuh (katalog.js, harga-promo.js) masih ikut berkontribusi.
+
+- Efek samping:
+  1. Angka hundredths secara visual ga ada bedanya. Sebelumnya update 100x/detik via setInterval, sekarang ~60x/detik lewat rAF. Perbedaannya ga terasa di mata.
+  2. Kecepatan teks berjalan sedikit beda dari versi JS karena durasi CSS animation di-set 15 detik per siklus, sedangkan versi JS tergantung lebar parent. Tapi secara visual tetap mulus.
+  3. Semua fitur tetap jalan normal, ga ada yang hilang atau rusak.
