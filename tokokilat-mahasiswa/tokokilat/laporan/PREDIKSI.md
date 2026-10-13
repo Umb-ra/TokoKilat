@@ -108,7 +108,32 @@ Tanggal dan hash commit entri ini: 2026-10-13
 
 ### Sesudah perbaikan
 
-- Hash commit perbaikan: ....
-- Hasil ukur (median 3 kali): ....
-- Prediksi vs kenyataan: ....
-- Efek samping: ....
+- Hash commit perbaikan: 8104a24
+
+- Hasil ukur (median 3 kali, S0):
+
+  Sebelum -> Sesudah:
+  - CLS: 0.473 -> 0.003 (turun 99.4%, target tugas <= 0.1 tercapai)
+  - totalBlokir: 4726ms -> 1044ms (turun 78%)
+  - jumlahLongTask: 160 -> 26 (turun 84%)
+  - frameLambat: 212 -> 120 (turun 43%)
+  - frameTerburuk: 1127ms -> 860ms (turun 24%)
+
+  Dari trace:
+  - LayoutShift events tak terduga (hadRecentInput = false): hanya tersisa 1 shift mikro dengan skor 0.0025. Pergeseran besar 0.1369 yang menggeser div alat, kisi, dan ringkasan di detik ke-9.5 sepenuhnya hilang.
+  - samakanTinggiJudul: durasi turun ke ~0ms karena penyeragaman tinggi diserahkan ke CSS min-height pada kartu-judul, menghapus 24 kali forced reflow berturut-turut.
+
+  Di screenshot flame chart sebelum perbaikan (S0-layoutshift-overview.png), track Layout shifts memiliki balok ungu tebal di sekitar detik ke-9.5 dengan shift score 0.1369 yang menggeser elemen div id=alat, div id=kisi, dan p id=ringkasan. Di S0-samakantinggijudul.png, fungsi samakanTinggiJudul memakan waktu 236ms karena loop 24 kali membaca offsetHeight (forced reflow) dan menulis style.height berulang kali.
+
+  Sesudah perbaikan (After-S0-layoutshift-overview.png), balok ungu tebal di track Layout shifts sudah tidak ada lagi, hanya menyisakan satu cluster mikro di detik ke-4.6 dengan shift score 0.0025 (total CLS 0.0025, tercatat 0.003 di alat ukur). Di After-S0-samakantinggijudul.png, fungsi samakanTinggiJudul sudah tidak muncul di flame chart (waktu eksekusi 0ms) karena penyeragaman tinggi diserahkan ke CSS min-height, sehingga renderProduk selesai jauh lebih cepat tanpa forced reflow.
+
+- Prediksi vs kenyataan: sangat tepat.
+
+  Dugaan bahwa banner promo yang di-prepend ke main dan fungsi samakanTinggiJudul menjadi biang kerok lonjakan CLS terbukti benar. Dengan memasang container banner kosong secara sinkron di detik ke-0 (sebelum fetch API promo) dan mengatur min-height di CSS, browser sudah mencadangkan ruang banner sejak awal. Saat response API datang setelah delay 1800ms, konten tinggal dimasukkan ke container tanpa mendorong elemen-elemen di bawahnya turun.
+
+  Prediksi CLS turun di bawah 0.1 tercapai bahkan jauh melampaui ekspektasi: dari 0.473 anjlok ke 0.003 (turun 99.4%). Total waktu blokir juga ikut turun drastis dari 4726ms ke 1044ms (turun 78%) karena penghapusan loop layout thrashing di samakanTinggiJudul.
+
+- Efek samping:
+  1. Banner promo tampil sebagai kontainer kosong berwarna biru gelap selama ~1.8 detik sebelum teks dan tombol muncul. Secara UX ini trade-off yang jauh lebih baik daripada konten mendadak loncat turun dan memicu salah klik iklan.
+  2. Judul produk yang hanya 1 baris memiliki sedikit ruang kosong ekstra di bawahnya karena min-height 3.8em disesuaikan untuk mengakomodasi judul hingga 3 baris. Tapi kartu-kartu dalam satu baris grid jadi sejajar rapi secara konsisten tanpa penalti performa JS.
+  3. Semua fungsionalitas banner (klik promo, toast info, pelacakan event promo_click di SDK analitik) tetap bekerja normal.

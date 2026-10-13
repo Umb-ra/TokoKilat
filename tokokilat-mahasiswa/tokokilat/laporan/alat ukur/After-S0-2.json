@@ -1,0 +1,29 @@
+{
+  "waktu": "2026-10-13T12:48:46.734Z",
+  "jumlahLongTask": 36,
+  "longTaskTerlama": 631,
+  "totalBlokir": 1082,
+  "jumlahInteraksi": 1,
+  "inp": 48,
+  "inpRinci": {
+    "durasi": 48,
+    "jenis": "pointerdown",
+    "target": "?",
+    "tundaInput": 20,
+    "proses": 0,
+    "presentasi": 28
+  },
+  "limaInteraksiTerlambat": [
+    {
+      "durasi": 48,
+      "jenis": "pointerdown",
+      "target": "?",
+      "tundaInput": 20,
+      "proses": 0,
+      "presentasi": 28
+    }
+  ],
+  "cls": 0.003,
+  "frameLambat": 109,
+  "frameTerburuk": 727
+}
