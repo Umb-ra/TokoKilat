@@ -27,8 +27,8 @@ function simulasiCicilan(harga) {
   return terbaik;
 }
 
-// Dibuat async supaya perhitungan tidak memblokir halaman.
-async function hitungHargaPromo(produk, aturan) {
+// Menghitung harga promo per produk. Sinkron karena tidak ada operasi I/O.
+function hitungHargaPromo(produk, aturan) {
   const dasar = hargaSetelahDiskon(produk);
   if (dasar < aturan.minBelanja) return null;
   let potongan = Math.min(Math.round((dasar * aturan.persen) / 100), aturan.maksPotongan);
@@ -52,18 +52,26 @@ async function terapkanVoucher(kode) {
   progres.hidden = false;
   isi.style.width = '0%';
 
-  const total = keadaan.semuaProduk.length;
+  const semua = keadaan.semuaProduk;
+  const total = semua.length;
+  const UKURAN_CHUNK = 100;
   let selesai = 0;
   keadaan.hargaVoucher.clear();
 
-  for (const produk of keadaan.semuaProduk) {
-    // await di setiap produk supaya browser sempat menggambar progress bar
-    const hasil = await hitungHargaPromo(produk, aturan);
-    if (hasil) keadaan.hargaVoucher.set(produk.id, hasil.hargaAkhir);
-    selesai++;
+  for (let i = 0; i < total; i += UKURAN_CHUNK) {
+    const batas = Math.min(i + UKURAN_CHUNK, total);
+    for (let j = i; j < batas; j++) {
+      const produk = semua[j];
+      const hasil = hitungHargaPromo(produk, aturan);
+      if (hasil) keadaan.hargaVoucher.set(produk.id, hasil.hargaAkhir);
+      selesai++;
+    }
     const persen = Math.round((selesai / total) * 100);
     isi.style.width = persen + '%';
     teks.textContent = 'Menghitung harga promo… ' + persen + '% (' + selesai + ' dari ' + total + ' produk)';
+    // Yield ke main thread: setTimeout menjadwalkan kelanjutan sebagai task baru,
+    // bukan microtask, sehingga browser mendapat rendering opportunity di antara chunk.
+    await new Promise(resolve => setTimeout(resolve, 0));
   }
 
   perbaruiHargaVoucherDiKartu();
