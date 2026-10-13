@@ -54,9 +54,9 @@ bagian "sebelum" setelah hasilnya diketahui; bila prediksi meleset, jelaskan di 
   - TimerFire: 265 -> 11 (turun 96%)
   - requestAnimationFrame: 140 -> 316 (naik, memang diharapkan karena rAF menggantikan setInterval)
 
-  Di screenshot flame chart sebelum perbaikan (S6-idle-overview.png), track Main penuh sesak dengan balok-balok kuning kecil yang mepet tanpa jeda dari detik 1 sampai 12. Kalau di-search "timer" di panel Performance, muncul 265 hasil Timer fired, masing-masing berdurasi sekitar 20ms dan memicu Scripting 7ms + Rendering 2ms + System 12ms.
+  Di screenshot flame chart sebelum perbaikan ([S6-idle-overview.png](gambar/S6-idle-overview.png)), track Main penuh sesak dengan balok-balok kuning kecil yang mepet tanpa jeda dari detik 1 sampai 12. Kalau di-search "timer" di panel Performance, muncul 265 hasil Timer fired, masing-masing berdurasi sekitar 20ms dan memicu Scripting 7ms + Rendering 2ms + System 12ms.
 
-  Sesudah perbaikan (After-S6-idle-overview.png), track Main terlihat jauh lebih lega. Ada banyak ruang kosong antar task. Kalau di-search "timer", cuma muncul 11 hasil, dan durasinya cuma 0.59ms per Timer fired (kemungkinan dari SDK analitik, bukan dari promo.js lagi). Aktivitas yang tersisa di main thread sebagian besar adalah callback rAF (fungsi perbarui) yang berjalan ~30 kali per detik untuk update angka hitung mundur.
+  Sesudah perbaikan ([After-S6-idle-overview.png](gambar/After-S6-idle-overview.png)), track Main terlihat jauh lebih lega. Ada banyak ruang kosong antar task. Kalau di-search "timer", cuma muncul 11 hasil, dan durasinya cuma 0.59ms per Timer fired (kemungkinan dari SDK analitik, bukan dari promo.js lagi). Aktivitas yang tersisa di main thread sebagian besar adalah callback rAF (fungsi perbarui) yang berjalan ~30 kali per detik untuk update angka hitung mundur.
 
 - Prediksi vs kenyataan: sebagian tepat, sebagian meleset.
 
@@ -81,9 +81,9 @@ Tanggal dan hash commit entri ini: 2026-10-13
 - Yang teramati di trace (baseline):
   Di rekaman S0 (muat halaman, diam 10 detik), track Layout Shifts menunjukkan ada layout shift besar di sekitar detik ke-9.5. Di panel Summary, shift score-nya 0.1369 dan elemen yang bergeser adalah div id=alat, div id=kisi, dan p id=ringkasan. Culprit-nya ditunjukkan sebagai "Unsized image: 1.svg". CLS total dari alat ukur konsisten 0.473 di ketiga pengukuran (jauh di atas target 0.1).
 
-  Di screenshot S0-pasangbannerpromo.png terlihat bahwa banner promo disisipkan lewat prepend ke elemen utama setelah API /api/promo selesai (delay sekitar 1800ms). Saat banner masuk, semua konten yang sudah di-render (alat, kisi produk, ringkasan) tergeser ke bawah. Ini persis yang dikeluhkan Kak Rara, mau pencet barang tapi halamannya loncat dan yang kepencet malah iklan promo.
+  Di screenshot [gambar/S0-pasangbannerpromo.png](gambar/S0-pasangbannerpromo.png) terlihat bahwa banner promo disisipkan lewat prepend ke elemen utama setelah API /api/promo selesai (delay sekitar 1800ms). Saat banner masuk, semua konten yang sudah di-render (alat, kisi produk, ringkasan) tergeser ke bawah. Ini persis yang dikeluhkan Kak Rara, mau pencet barang tapi halamannya loncat dan yang kepencet malah iklan promo.
 
-  Di screenshot S0-samakantinggijudul.png terlihat fungsi samakanTinggiJudul di katalog.js yang menulis style.height di elemen kartu-judul yang sudah ter-render. Ini juga bikin layout shift tambahan karena mengubah dimensi elemen setelah browser sudah menghitung layout awal.
+  Di screenshot [gambar/S0-samakantinggijudul.png](gambar/S0-samakantinggijudul.png) terlihat fungsi samakanTinggiJudul di katalog.js yang menulis style.height di elemen kartu-judul yang sudah ter-render. Ini juga bikin layout shift tambahan karena mengubah dimensi elemen setelah browser sudah menghitung layout awal.
 
 - Dugaan mekanisme:
   Ada dua penyebab layout shift:
@@ -123,9 +123,9 @@ Tanggal dan hash commit entri ini: 2026-10-13
   - LayoutShift events tak terduga (hadRecentInput = false): hanya tersisa 1 shift mikro dengan skor 0.0025. Pergeseran besar 0.1369 yang menggeser div alat, kisi, dan ringkasan di detik ke-9.5 sepenuhnya hilang.
   - samakanTinggiJudul: durasi turun ke ~0ms karena penyeragaman tinggi diserahkan ke CSS min-height pada kartu-judul, menghapus 24 kali forced reflow berturut-turut.
 
-  Di screenshot flame chart sebelum perbaikan (S0-layoutshift-overview.png), track Layout shifts memiliki balok ungu tebal di sekitar detik ke-9.5 dengan shift score 0.1369 yang menggeser elemen div id=alat, div id=kisi, dan p id=ringkasan. Di S0-samakantinggijudul.png, fungsi samakanTinggiJudul memakan waktu 236ms karena loop 24 kali membaca offsetHeight (forced reflow) dan menulis style.height berulang kali.
+  Di screenshot flame chart sebelum perbaikan ([gambar/S0-layoutshift-overview.png](gambar/S0-layoutshift-overview.png)), track Layout shifts memiliki balok ungu tebal di sekitar detik ke-9.5 dengan shift score 0.1369 yang menggeser elemen div id=alat, div id=kisi, dan p id=ringkasan. Di [gambar/S0-samakantinggijudul.png](gambar/S0-samakantinggijudul.png), fungsi samakanTinggiJudul memakan waktu 236ms karena loop 24 kali membaca offsetHeight (forced reflow) dan menulis style.height berulang kali.
 
-  Sesudah perbaikan (After-S0-layoutshift-overview.png), balok ungu tebal di track Layout shifts sudah tidak ada lagi, hanya menyisakan satu cluster mikro di detik ke-4.6 dengan shift score 0.0025 (total CLS 0.0025, tercatat 0.003 di alat ukur). Di After-S0-samakantinggijudul.png, fungsi samakanTinggiJudul sudah tidak muncul di flame chart (waktu eksekusi 0ms) karena penyeragaman tinggi diserahkan ke CSS min-height, sehingga renderProduk selesai jauh lebih cepat tanpa forced reflow.
+  Sesudah perbaikan ([gambar/After-S0-layoutshift-overview.png](gambar/After-S0-layoutshift-overview.png)), balok ungu tebal di track Layout shifts sudah tidak ada lagi, hanya menyisakan satu cluster mikro di detik ke-4.6 dengan shift score 0.0025 (total CLS 0.0025, tercatat 0.003 di alat ukur). Di [gambar/After-S0-samakantinggijudul.png](gambar/After-S0-samakantinggijudul.png), fungsi samakanTinggiJudul sudah tidak muncul di flame chart (waktu eksekusi 0ms) karena penyeragaman tinggi diserahkan ke CSS min-height, sehingga renderProduk selesai jauh lebih cepat tanpa forced reflow.
 
 - Prediksi vs kenyataan: sangat tepat.
 
@@ -140,7 +140,7 @@ Tanggal dan hash commit entri ini: 2026-10-13
 
 ---
 
-## P-02: Layar beku saat pakai voucher
+## P-02: Layar freeze saat pakai voucher
 
 Tiket terkait: TK-1057
 Tanggal dan hash commit entri ini: 2026-10-13
@@ -172,7 +172,7 @@ Tanggal dan hash commit entri ini: 2026-10-13
 - Prediksi terukur:
   Setelah perubahan, INP pada S4 turun dari ~1824ms menjadi di bawah 200ms (target tugas). Long task terlama turun dari 1808ms ke sekitar 50-100ms per chunk. Progress bar bergerak bertahap secara visual dari 0% ke 100%. Kolom cari tetap bisa diketik selama perhitungan berjalan.
 
-  Total waktu perhitungan mungkin sedikit lebih lama dari sebelumnya karena overhead yield (setiap setTimeout menambah delay minimal ~4ms). Tapi perbedaannya kecil dan trade-off-nya sangat layak: pengguna melihat progres dan bisa berinteraksi, dibandingkan layar beku 1.8 detik.
+  Total waktu perhitungan mungkin sedikit lebih lama dari sebelumnya karena overhead yield (setiap setTimeout menambah delay minimal ~4ms). Tapi perbedaannya kecil dan trade-off-nya sangat layak: pengguna melihat progres dan bisa berinteraksi, dibandingkan layar freeze 1.8 detik.
 
   Prediksi efek samping: kalau ukuran chunk terlalu kecil (misal 1 produk per chunk), overhead yield jadi signifikan dan total waktu perhitungan bisa jauh lebih lama. Kalau chunk terlalu besar (misal 1000 produk), masih ada long task yang terasa. Perlu cari titik tengah yang tepat.
 
@@ -189,28 +189,30 @@ Tanggal dan hash commit entri ini: 2026-10-13
 
   Sebelum -> Sesudah:
   - INP: 1824ms -> 104ms (turun 94.3%, target tugas <= 200ms tercapai)
-  - longTaskTerlama: 1808ms -> 528ms (turun 70.8%, di trace sebagian besar chunk berkisar 40-70ms)
-  - totalBlokir: 8678ms -> 923ms (turun 89.4%)
+  - longTaskTerlama: 1808ms -> 632ms (turun 65.0%, di trace sebagian besar chunk berkisar 40-70ms)
+  - totalBlokir: 8678ms -> 1098ms (turun 87.3%)
   - jumlahLongTask: 125 -> 25 (turun 80%)
-  - frameLambat: 158 -> 93 (turun 41.1%)
-  - frameTerburuk: 1945ms -> 636ms (turun 67.3%)
+  - frameLambat: 157 -> 93 (turun 40.8%)
+  - frameTerburuk: 1818ms -> 782ms (turun 57.0%)
   - CLS: 0.000 -> 0.035 (tetap aman jauh di bawah target 0.1)
+
+  Catatan: median dihitung per metrik dari tiga pengukuran. INP, jumlahLongTask, frameLambat, dan CLS kebetulan jatuh pada After-S4-2, sedangkan longTaskTerlama, totalBlokir, dan frameTerburuk jatuh pada After-S4-3. Trace yang dipakai untuk screenshot adalah Trace2.
 
   Dari trace:
   - Interaksi Pointer (klik tombol "Pakai voucher" KILAT1212): berdurasi 100.81ms (Input delay 12ms, Processing duration 26ms, Presentation delay 63ms), turun drastis dari baseline yang mencapai 1.81 detik (processing duration 1697ms).
   - Pembagian komputasi (chunking): Task raksasa 1.8 detik yang memonopoli main thread pada baseline terpecah menjadi puluhan task kecil (sekitar 30 chunk untuk 3000 produk, dengan rata-rata durasi 40-60ms per chunk).
   - Jeda rendering (rendering opportunity): Di antara task chunk, terdapat jeda kosong di main thread yang memungkinkan browser mengeksekusi pipeline rendering (UpdateLayoutTree, Layout, Paint, Composite).
-  - Progress bar visual: Progres bar tidak lagi diam di 0% lalu meloncat ke 100%, melainkan ter-render bergerak secara bertahap (terbukti di screenshot After-S4-Progressbar-hitunghargapromo.png saat mencapai 40% / 1200 dari 3000 produk).
-  - Kolom cari: Input keyboard dapat dieksekusi di sela-sela antar chunk, sehingga halaman tidak beku saat voucher diterapkan.
+  - Progress bar visual: Progres bar tidak lagi diam di 0% lalu meloncat ke 100%, melainkan ter-render bergerak secara bertahap (terbukti di screenshot [gambar/After-S4-Progressbar-hitunghargapromo.png](gambar/After-S4-Progressbar-hitunghargapromo.png) saat mencapai 40% / 1200 dari 3000 produk).
+  - Kolom cari: Input keyboard dapat dieksekusi di sela-sela antar chunk, sehingga halaman tidak freeze saat voucher diterapkan.
 
-  Di screenshot flame chart sebelum perbaikan (S4-longtask-overview.png), track Main didominasi oleh satu balok Task kuning raksasa sepanjang 1.81 detik tanpa jeda sama sekali (Event: click -> Run microtasks -> terapkanVoucher memproses seluruh 3000 produk sekaligus), menghasilkan interaksi pointer merah dengan durasi 1.81 detik dan browser tidak dapat merender frame apa pun.
+  Di screenshot flame chart sebelum perbaikan ([gambar/S4-longtask-overview.png](gambar/S4-longtask-overview.png)), track Main didominasi oleh satu balok Task kuning raksasa sepanjang 1.81 detik tanpa jeda sama sekali (Event: click -> Run microtasks -> terapkanVoucher memproses seluruh 3000 produk sekaligus), menghasilkan interaksi pointer merah dengan durasi 1.81 detik dan browser tidak dapat merender frame apa pun.
   
-  Sesudah perbaikan (After-S4-longtask-overview.png), balok raksasa tersebut sepenuhnya lenyap. Track Main menampilkan deretan task-task kecil vertikal yang rapi (~40-50ms) dengan celah putih di antaranya. Track Interactions menampilkan balok Pointer normal dengan durasi hanya 100.81ms, dan track Frames terus menghasilkan frame rendering aktif. Di After-S4-bottomup.png, fungsi simulasiCicilan dan Layout sudah tidak lagi memonopoli main thread dalam satu long task tak terputus.
+  Sesudah perbaikan ([gambar/After-S4-longtask-overview.png](gambar/After-S4-longtask-overview.png)), balok raksasa tersebut sepenuhnya lenyap. Track Main menampilkan deretan task-task kecil vertikal yang rapi (~40-50ms) dengan celah putih di antaranya. Track Interactions menampilkan balok Pointer normal dengan durasi hanya 100.81ms, dan track Frames terus menghasilkan frame rendering aktif. Di [gambar/After-S4-bottomup.png](gambar/After-S4-bottomup.png), fungsi simulasiCicilan dan Layout sudah tidak lagi memonopoli main thread dalam satu long task tak terputus.
 
 - Prediksi vs kenyataan: sangat tepat.
   Dugaan bahwa fungsi hitungHargaPromo yang di-mark async menghasilkan resolved promise dan dirantai sebagai microtask tak berujung terbukti 100% benar. Dengan menghapus async tiruan tersebut dan memecah loop for-of menjadi chunk 100 produk yang diselingi pemanggilan yield via setTimeout(0), browser berhasil diberikan waktu bernapas (rendering opportunity) untuk menggambar DOM progress bar dan merespons antrean input pengguna.
 
-  Prediksi INP turun di bawah 200ms tercapai sempurna (104ms). Prediksi bahwa progress bar bergerak bertahap terbukti nyata (seperti terlihat pada tangkapan layar After-S4-Progressbar-hitunghargapromo.png).
+  Prediksi INP turun di bawah 200ms tercapai sempurna (104ms). Prediksi bahwa progress bar bergerak bertahap terbukti nyata (seperti terlihat pada tangkapan layar [gambar/After-S4-Progressbar-hitunghargapromo.png](gambar/After-S4-Progressbar-hitunghargapromo.png)).
 
 - Efek samping:
   1. Total durasi waktu perhitungan voucher bertambah sangat sedikit (sekitar beberapa puluh milidetik ekstra karena overhead minimal penundaan timer setTimeout(0) antar chunk), namun dampaknya sama sekali tidak terasa bagi pengguna karena antarmuka tetap responsif dan progres terlihat berjalan mulus.
