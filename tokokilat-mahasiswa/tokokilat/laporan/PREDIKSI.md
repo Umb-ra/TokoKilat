@@ -6,20 +6,37 @@ bagian "sebelum" setelah hasilnya diketahui; bila prediksi meleset, jelaskan di 
 
 ---
 
-## P-01: [judul singkat masalah]
+## P-04: HP panas dan baterai boros saat idle
 
-**Tiket terkait:** TK-....
-**Tanggal dan hash commit entri ini:** ....
+**Tiket terkait:** TK-1070
+**Tanggal dan hash commit entri ini:** 2026-10-13
 
 ### Sebelum perbaikan
 
-- **Yang teramati di trace (baseline):** durasi, di track apa, fungsi apa yang dominan di bottom-up.
-- **Dugaan mekanisme:** jelaskan memakai istilah event loop (task, microtask, rendering opportunity)
-  atau tahap pipeline (JS, Style, Layout, Paint, Composite).
-- **Rencana perubahan:** ....
-- **Prediksi terukur:** "Setelah perubahan, [metrik] turun dari ... menjadi sekitar ..., karena ...".
-  Sertakan juga prediksi efek samping: apa yang mungkin menjadi *lebih buruk*?
-- **Alternatif yang dipertimbangkan dan alasan tidak dipilih:** ....
+- **Yang teramati di trace (baseline):**
+  Di rekaman S6 (diam 10 detik tanpa sentuh apa-apa), track Main di flame chart terlihat penuh sesak dengan balok-balok kuning kecil yang berulang terus-menerus tanpa jeda. Tidak ada waktu idle sama sekali. Di Bottom-Up, fungsi yang paling dominan adalah callback dari promo.js:38:15 (teks berjalan) dan promo.js:40:19 (Layout dari penulisan style.left). Keduanya dipicu oleh Timer fired, yaitu setInterval yang berjalan setiap 10ms. Dari alat ukur, median frame lambat (>50ms) ada 271 buah dalam 10 detik, dan frame terburuk mencapai 1260ms. Target tugas adalah paling banyak 2 frame lambat per 10 detik.
+
+- **Dugaan mekanisme:**
+  Di promo.js ada dua setInterval dengan interval 10ms (baris 22 dan 38). Artinya ada sekitar 200 callback per detik yang masuk ke task queue dan dieksekusi di main thread.
+
+  Masalah pertama (hitung mundur, baris 22-32): setiap callback membaca wadah.offsetWidth (memaksa browser menghitung layout / forced reflow) lalu langsung menulis garis.style.width. Pola baca-tulis-baca-tulis ini disebut layout thrashing - browser harus menghitung ulang layout setiap kali ada pembacaan setelah penulisan.
+
+  Masalah kedua (teks berjalan, baris 38-42): setiap callback menulis teks.style.left = x + 'px'. Properti left mempengaruhi layout, jadi setiap penulisan memicu tahap Style -> Layout -> Paint di rendering pipeline. Ini terjadi 100 kali per detik.
+
+  Akibatnya, CPU tidak pernah masuk kondisi idle. Pada perangkat HP kelas bawah, ini bikin prosesor terus bekerja keras -> panas -> baterai cepat habis, persis seperti yang dikeluhkan Pak Yusuf.
+
+- **Rencana perubahan:**
+  1. Hitung mundur: Ganti setInterval(10ms) dengan requestAnimationFrame. Angka jam/menit/detik cukup diperbarui saat nilainya berubah (per detik), centidetik diperbarui setiap frame (~60fps, sudah cukup mulus). Untuk garis progress, simpan nilai offsetWidth sekali saja (cache), jangan baca ulang setiap frame. Hitung lebar garis pakai persentase CSS (width: ...%) supaya tidak perlu baca offsetWidth sama sekali.
+  2. Teks berjalan: Ganti setInterval(10ms) + style.left dengan CSS animation menggunakan transform: translateX(). Animasi transform berjalan di compositor thread, jadi main thread benar-benar bebas dan browser bisa idle.
+
+- **Prediksi terukur:**
+  Setelah perubahan, frame lambat (>50ms) per 10 detik turun dari ~271 menjadi sekitar 0-2 frame, karena main thread tidak lagi dibanjiri 200 callback per detik. Aktivitas main thread saat idle seharusnya mendekati nol - hanya rAF yang berjalan ~60fps untuk hitung mundur, dan teks berjalan sepenuhnya di compositor.
+
+  Prediksi efek samping: Angka centidetik mungkin terlihat sedikit kurang mulus dibanding sebelumnya. setInterval(10ms) mengupdate 100 kali per detik, sedangkan requestAnimationFrame hanya ~60 kali per detik. Tapi perbedaannya kecil dan tidak terasa oleh mata biasa. Teks berjalan dengan CSS animation mungkin kecepatannya sedikit beda dari versi JS - perlu disesuaikan durasinya supaya terasa mirip.
+
+- **Alternatif yang dipertimbangkan dan alasan tidak dipilih:**
+  1. Kenapa tidak cukup turunkan frekuensi setInterval ke 100ms saja? - Memang akan mengurangi beban, tapi tetap memicu layout di main thread (masih pakai style.left dan offsetWidth). CPU tetap tidak bisa idle sepenuhnya. Dan angka centidetik jadi sangat patah-patah kalau cuma update 10 kali per detik.
+  2. Kenapa pilih CSS animation untuk teks berjalan, bukan requestAnimationFrame? - rAF memang lebih baik dari setInterval, tapi tetap berjalan di main thread. CSS animation dengan transform bisa di-offload ke compositor thread, jadi main thread benar-benar kosong saat idle. Ini solusi paling bersih untuk animasi yang tidak butuh logika JS.
 
 ### Sesudah perbaikan
 
