@@ -14,32 +14,38 @@ const duaDigit = (n) => String(n).padStart(2, '0');
 function pasangHitungMundur() {
   const akhir = akhirFlashSale();
   const awal = Date.now();
-  const wadah = $('#hitung-mundur');
+  const totalDurasi = akhir - awal;
   const garis = $('#hm-garis');
   const jam = $('#hm-jam'), menit = $('#hm-menit'), detik = $('#hm-detik'), senti = $('#hm-senti');
 
-  // 10 ms supaya angka perseratus detik terlihat mulus
-  setInterval(() => {
-    const sisa = Math.max(akhir - Date.now(), 0);
-    jam.textContent = duaDigit(Math.floor(sisa / 3600000));
-    menit.textContent = duaDigit(Math.floor((sisa % 3600000) / 60000));
-    detik.textContent = duaDigit(Math.floor((sisa % 60000) / 1000));
-    senti.textContent = duaDigit(Math.floor((sisa % 1000) / 10));
+  let jamLama = '', menitLama = '', detikLama = '';
 
-    // garis di bawah angka menyusut mengikuti sisa waktu
-    const lebarPenuh = wadah.offsetWidth;
-    garis.style.width = Math.round(lebarPenuh * (sisa / (akhir - awal + 1))) + 'px';
-  }, 10);
+  function perbarui() {
+    const sisa = Math.max(akhir - Date.now(), 0);
+
+    const jBaru = duaDigit(Math.floor(sisa / 3600000));
+    const mBaru = duaDigit(Math.floor((sisa % 3600000) / 60000));
+    const dBaru = duaDigit(Math.floor((sisa % 60000) / 1000));
+    const sBaru = duaDigit(Math.floor((sisa % 1000) / 10));
+
+    // Tulis DOM hanya kalau nilai berubah, supaya tidak memicu style recalc sia-sia
+    if (jBaru !== jamLama)   { jam.textContent   = jBaru; jamLama   = jBaru; }
+    if (mBaru !== menitLama) { menit.textContent = mBaru; menitLama = mBaru; }
+    if (dBaru !== detikLama) { detik.textContent = dBaru; detikLama = dBaru; }
+    senti.textContent = sBaru;
+
+    // Pakai persentase agar tidak perlu baca offsetWidth (forced reflow) tiap frame
+    garis.style.width = ((sisa / totalDurasi) * 100) + '%';
+
+    if (sisa > 0) requestAnimationFrame(perbarui);
+  }
+
+  requestAnimationFrame(perbarui);
 }
 
 function pasangTeksBerjalan() {
-  const teks = $('#berjalan-teks');
-  let x = teks.parentElement.offsetWidth;
-  setInterval(() => {
-    x -= 1;
-    if (x < -teks.offsetWidth) x = teks.parentElement.offsetWidth;
-    teks.style.left = x + 'px';
-  }, 10);
+  // Animasi sekarang sepenuhnya ditangani CSS (transform: translateX di compositor thread).
+  // Main thread tidak perlu menjalankan apa pun untuk teks berjalan.
 }
 
 async function pasangBannerPromo() {
