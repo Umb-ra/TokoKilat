@@ -49,10 +49,12 @@ function pasangTeksBerjalan() {
 }
 
 async function pasangBannerPromo() {
+  const banner = el('section', 'promo-banner');
+  $('#utama').prepend(banner);
+
   const respons = await fetch('/api/promo');
   const promo = await respons.json();
 
-  const banner = el('section', 'promo-banner');
   const teks = el('div');
   teks.append(el('h2', '', promo.judul), el('p', '', promo.isi));
   const tombol = el('button', '', promo.tombol);
@@ -61,9 +63,7 @@ async function pasangBannerPromo() {
     tampilkanToast('Syarat promo: berlaku 12 Desember, satu voucher per akun, tidak bisa digabung.');
     if (window.Lacak) window.Lacak.kirim('promo_click', { judul: promo.judul });
   });
-  banner.append(teks, tombol);
-
-  $('#utama').prepend(banner);
+  banner.replaceChildren(teks, tombol);
 }
 
 export function pasangPromo() {
