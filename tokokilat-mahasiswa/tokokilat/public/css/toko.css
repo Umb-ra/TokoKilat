@@ -81,8 +81,14 @@ button { cursor: pointer; }
 
 /* ---------- kisi produk ---------- */
 .kisi { display: grid; grid-template-columns: repeat(auto-fill, minmax(168px, 1fr)); gap: 12px; }
-.kartu { position: relative; display: flex; flex-direction: column; background: var(--putih); border: 1px solid var(--garis); border-radius: 10px; overflow: hidden; opacity: 0; transform: translateY(16px); transition: opacity .35s ease, transform .35s ease; }
-.kartu.terlihat { opacity: 1; transform: none; }
+.kartu { position: relative; display: flex; flex-direction: column; background: var(--putih); border: 1px solid var(--garis); border-radius: 10px; overflow: hidden; content-visibility: auto; contain-intrinsic-size: auto 380px; }
+/* Efek muncul hanya dipasang saat kartu masuk layar. Kartu yang belum muncul tidak diberi
+   transform/opacity, supaya tidak ada ribuan node transform yang ikut dikirim ke compositor. */
+.kartu.terlihat { animation: kartu-muncul .35s ease; }
+@keyframes kartu-muncul {
+  from { opacity: 0; transform: translateY(16px); }
+  to   { opacity: 1; transform: none; }
+}
 .kartu-media { display: block; background: var(--kabut); aspect-ratio: 1 / 1; }
 .kartu-media img { display: block; width: 100%; height: 100%; object-fit: cover; }
 .kartu-badan { display: flex; flex-direction: column; gap: 6px; padding: 10px; flex: 1; }
@@ -151,5 +157,5 @@ button { cursor: pointer; }
 @media (prefers-reduced-motion: reduce) {
   html { scroll-behavior: auto; }
   .kartu.di-layar .lencana-kilat, .kartu.di-layar .lencana-kilat::after { animation: none; }
-  .kartu { transition: none; }
+  .kartu.terlihat { animation: none; }
 }
