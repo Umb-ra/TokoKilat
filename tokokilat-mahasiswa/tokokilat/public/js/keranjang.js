@@ -114,9 +114,18 @@ export async function tambahKeKeranjang(produk, tombol) {
 }
 
 const pesananDiproses = new Set();
+const LAMA_TANDA_DIPESAN = 3000;
+
+function aktifkanTombolBeli(produk, tombol) {
+  pesananDiproses.delete(produk.id);
+  tombol.textContent = 'Beli sekarang';
+  tombol.disabled = false;
+  tombol.removeAttribute('aria-busy');
+}
 
 export async function beliSekarang(produk, tombol) {
-  // Penjaga pesanan ganda: klik berikutnya ditolak selama pesanan pertama belum dijawab server.
+  // Penjaga pesanan ganda: klik berikutnya ditolak selama pesanan diproses DAN selama
+  // tulisan "Dipesan ✓" masih tampil, karena pengguna sering memencet ulang di rentang itu.
   if (pesananDiproses.has(produk.id)) return;
   pesananDiproses.add(produk.id);
   tombol.disabled = true;
@@ -135,17 +144,15 @@ export async function beliSekarang(produk, tombol) {
     if (!respons.ok) throw new Error('Server menjawab ' + respons.status);
     const pesanan = await respons.json();
 
+    // Tombol tetap nonaktif selama "Dipesan ✓" tampil, baru setelah itu bisa dipakai lagi.
     tombol.textContent = 'Dipesan ✓';
-    setTimeout(() => { tombol.textContent = 'Beli sekarang'; }, 1500);
+    setTimeout(() => aktifkanTombolBeli(produk, tombol), LAMA_TANDA_DIPESAN);
     tampilkanToast('Pesanan ' + pesanan.id + ' dibuat: ' + produk.nama);
     perbaruiLencanaPesanan();
   } catch (galat) {
-    tombol.textContent = 'Beli sekarang';
+    // Kalau gagal, tombol langsung aktif lagi supaya pengguna bisa mencoba ulang.
+    aktifkanTombolBeli(produk, tombol);
     tampilkanToast('Pesanan gagal dibuat, silakan coba lagi.');
-  } finally {
-    pesananDiproses.delete(produk.id);
-    tombol.disabled = false;
-    tombol.removeAttribute('aria-busy');
   }
 }
 
