@@ -25,6 +25,8 @@ function buatKartu(produk) {
   const media = el('a', 'kartu-media');
   media.href = '#produk-' + produk.id;
   const gambar = document.createElement('img');
+  gambar.loading = 'lazy';
+  gambar.decoding = 'async';
   gambar.src = produk.gambar;
   gambar.alt = produk.nama;
   gambar.width = 480;
