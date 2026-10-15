@@ -444,7 +444,73 @@ Tanggal dan hash commit entri ini: 2026-10-13
   3. Kenapa tidak menambahkan will-change: transform ke semua kartu? - Browser akan membuat layer terpisah untuk 3000 kartu, sehingga memori GPU membengkak. Di HP kelas bawah ini justru bisa membuat halaman lebih berat.
   4. Kenapa tidak menghapus efek kartu muncul atau animasi lencana saja? - Keduanya termasuk fitur yang tidak boleh dihapus menurut aturan tugas. Yang diubah hanya caranya.
 
-### Sesudah perbaikan
+### Sesudah perbaikan (putaran 1)
+
+- Hash commit perbaikan: e6d60db (JavaScript: IntersectionObserver, listener passive, impresi dikirim saat senggang) dan ee3184e (CSS: animasi pakai transform). Rencananya satu commit per penyebab, tapi tiga perubahan JavaScript ada di file yang sama (gulir.js), jadi akhirnya dipecah per jenis berkas. Ada satu tambahan yang tidak disebut di rencana: lencana kilat hanya berdenyut saat kartunya ada di layar (kelas di-layar), supaya tidak ada 240 animasi yang berjalan di luar layar.
+
+- Hasil ukur (3 kali, CPU 4x, iPhone 16 393×852, trace yang dipakai rekaman ke-2 karena angkanya di tengah):
+
+  Angka dari trace (dijumlahkan per jenis kejadian di main thread, sebelum -> sesudah rekaman 1 / 2 / 3):
+  - Long task terlama: 405 ms -> 113 / 116 / 114 ms
+  - Long task di atas 100 ms: 37 -> 17 / 19 / 30
+  - EventDispatch (penanganan wheel/touch/scroll): 4.238 ms -> 21 / 21 / 15 ms
+  - Layout: 3.723 ms -> 2.608 / 2.225 / 2.483 ms
+  - Pre-paint: 3.024 ms -> 427 / 364 / 386 ms
+  - Commit: 860 ms -> 4.074 / 3.700 / 3.726 ms
+  - IntersectionObserver (computeIntersections): 789 ms -> 4.037 / 3.655 / 3.662 ms
+  - Callback requestAnimationFrame: 52 ms -> 1.800 / 1.697 / 1.400 ms
+
+  Dari tab Summary: Rendering 7.147 ms -> 3.297 ms (median), Scripting 1.701 ms -> 298 ms, tapi Painting naik dari 1.284 ms -> 4.644 ms. Di Bottom-Up ([After-S5-bottomup.png](gambar/After-S5-bottomup.png)), urutan teratas sekarang Commit 45,5%, Layout 28,0%, dan Paint 13,1%. getBoundingClientRect sudah tidak muncul.
+
+  Insight "Forced reflow" masih muncul ([After-S5-forced-reflow.png](gambar/After-S5-forced-reflow.png)), tapi pemicunya sudah lain: bukan lagi periksaGulir dengan 4 baris, melainkan satu baris di fungsi baru perbaruiTampilanGulir (gulir.js:54, pembacaan scrollHeight).
+
+  Angka alat ukur (long task terlama 2.120 / 2.812 / 2.275 ms, INP 2.152 / 3.040 / 112 ms) tidak saya pakai. Interaksi terlambatnya adalah klik tombol "Reset" dan "Buka alat ukur" dengan tunda input sampai 2-3 detik, sedangkan long task terlama di dalam trace cuma 116 ms. Jadi long task 2 detik itu terjadi di luar rentang rekaman, kemungkinan saat halaman baru selesai dimuat ulang dan masih menggambar 3000 kartu.
+
+- Prediksi vs kenyataan: sebagian tepat, sebagian meleset, dan ada regresi baru.
+
+  Yang tepat: penanganan event scroll hampir hilang (EventDispatch 4.238 -> sekitar 20 ms), loop getBoundingClientRect 3000 kartu hilang, Pre-paint turun 88%, dan long task terlama turun dari 405 ms ke sekitar 115 ms. Ini sejalan dengan dugaan bahwa listener non-passive dan loop di periksaGulir adalah beban utama.
+
+  Yang meleset: prediksi long task di bawah 100 ms belum tercapai (masih sekitar 115 ms), porsi Layout cuma turun ke 28% (prediksi di bawah 10%), dan forced reflow belum hilang sepenuhnya.
+
+  Regresi yang tidak saya perkirakan: Commit naik 4 kali lipat (860 -> sekitar 3.700 ms) dan IntersectionObserver naik hampir 5 kali lipat (789 -> sekitar 3.660 ms). Jadi sebagian beban hanya pindah tempat, dari JavaScript di event scroll ke tahap rendering.
+
+- Efek samping: secara tampilan semua fitur tetap jalan. Kartu tetap muncul dengan animasi, lencana tetap berdenyut, bar progres, bayangan header, dan tombol "Ke atas" tetap berfungsi, dan event impression tetap terkirim (sekarang satu kali per jeda guliran, bukan setiap ada kartu baru). Efek sampingnya ada di sisi kinerja, yaitu regresi Commit dan IntersectionObserver di atas.
+
+### Sebelum perbaikan (putaran 2)
+
+- **Yang teramati di trace (hasil putaran 1):**
+  Tiga beban terbesar yang tersisa adalah Commit (sekitar 3.700 ms), IntersectionObserver (sekitar 3.660 ms), dan Layout (sekitar 2.480 ms). Callback requestAnimationFrame juga naik ke sekitar 1.700 ms, dan di dalamnya ada forced reflow dari gulir.js:54.
+
+- **Dugaan mekanisme:**
+  1. IntersectionObserver: di putaran 1, semua 3000 kartu diamati terus selamanya (tidak pernah di-unobserve) karena kelas di-layar perlu diperbarui. Akibatnya setiap frame selama scroll, browser menghitung perpotongan 3000 kartu dengan layar. Sebelumnya beban IntersectionObserver cuma dari loading="lazy" pada gambar.
+  2. Commit: setiap kartu yang belum muncul sekarang punya transform: translateY(16px) dan opacity: 0. Transform yang bukan "none" membuat browser menyimpan node transform tersendiri untuk tiap kartu, jadi ada sekitar 3000 node transform ditambah 3000 node opacity yang ikut dikirim ke compositor di setiap commit. Di versi lama yang dianimasikan margin-top, jadi tidak ada node transform sebanyak itu.
+  3. Forced reflow di perbaruiTampilanGulir: callback IntersectionObserver menambah kelas (terlihat, di-layar) di antara dua frame, sehingga layout jadi kotor. Lalu di frame berikutnya, perbaruiTampilanGulir membaca scrollHeight, dan pembacaan ini memaksa layout dihitung saat itu juga.
+  4. Layout yang masih besar: setiap kali ada kelas kartu yang berubah, browser menghitung ulang layout kisi berisi 3000 kartu, termasuk isi kartu yang jauh di luar layar.
+
+- **Rencana perubahan:**
+  1. Kartu di-unobserve setelah muncul pertama kali. Untuk lencana kilat dibuat observer kedua yang hanya mengamati kartu flash sale (sekitar 240), jadi jumlah target turun terus selama scroll.
+  2. Efek kartu muncul diganti dari transition menjadi @keyframes yang hanya dipasang pada .kartu.terlihat. Kartu yang belum muncul tidak diberi transform atau opacity sama sekali, karena posisinya memang selalu di luar layar (diamati dengan rootMargin 80px).
+  3. Callback IntersectionObserver tidak langsung menulis kelas, tapi menitipkan perubahan ke requestAnimationFrame. Di rAF, scrollY dibaca dulu, baru kelas-kelas ditulis. Tinggi dokumen tidak dibaca lagi di tiap frame, tapi disimpan dan diperbarui lewat ResizeObserver (callback-nya berjalan setelah layout selesai, jadi tidak memaksa layout).
+  4. Kartu diberi content-visibility: auto dengan contain-intrinsic-size, supaya browser melewati layout dan paint isi kartu yang jauh di luar layar.
+
+- **Prediksi terukur (trace rekaman median, CPU 4x, iPhone 16):**
+  - IntersectionObserver turun dari sekitar 3.660 ms ke kisaran baseline (sekitar 800 ms atau kurang).
+  - Commit turun dari sekitar 3.700 ms ke di bawah 1.000 ms.
+  - Insight "Forced reflow" tidak muncul lagi, dan callback requestAnimationFrame turun dari sekitar 1.700 ms ke di bawah 300 ms.
+  - Layout turun dari sekitar 2.480 ms ke di bawah 1.000 ms karena isi kartu di luar layar dilewati.
+  - Long task terlama turun ke di bawah 100 ms.
+
+  Prediksi efek samping:
+  1. Kalau scroll sangat cepat, ada kemungkinan kartu terlihat sekejap tanpa animasi, karena kartu yang belum muncul tidak lagi disembunyikan dengan opacity: 0.
+  2. content-visibility: auto membuat browser memakai tinggi perkiraan untuk kartu yang belum pernah digambar, jadi panjang scrollbar bisa sedikit berubah saat menggulir pertama kali.
+  3. Impresi tetap dicatat saat kartu pertama kali muncul, jadi tidak terpengaruh oleh unobserve.
+
+- **Alternatif yang dipertimbangkan:**
+  1. Kembali ke margin-top untuk efek muncul supaya Commit turun lagi. Tidak dipilih karena margin-top memicu Layout di setiap frame animasi dan menggeser kartu di bawahnya (layout shift).
+  2. Bar progres dan bayangan header pakai scroll-driven animation di CSS (animation-timeline: scroll()), jadi tidak ada JavaScript sama sekali saat scroll. Ini menarik, tapi tombol "Ke atas" tetap butuh JavaScript, dan dukungannya belum merata di semua browser. Disimpan sebagai rekomendasi.
+  3. Virtual list. Alasannya sama dengan putaran 1: berisiko melanggar aturan "semua produk tetap ada" dan merusak Ctrl+F.
+
+### Sesudah perbaikan (putaran 2)
 
 - Hash commit perbaikan:
 - Hasil ukur (median 3 kali):
