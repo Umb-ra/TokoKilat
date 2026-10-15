@@ -638,7 +638,21 @@ Tanggal dan hash commit entri ini: 2026-10-13
 
 ### Sesudah perbaikan (putaran 2)
 
-- Hash commit perbaikan:
-- Hasil ukur (median 3 kali):
+- Hash commit perbaikan: 737216e
+
+- Penyimpangan dari rencana: prediksi menyebut tombol dikunci 1,5 detik setelah pesanan berhasil. Sebelum mengukur, perubahan ini saya uji dulu dengan pola klik dari rekaman putaran 1 (klik pada 0, sekitar 1 dan sekitar 2 detik). Hasilnya masih 2 pesanan, karena klik ketiga datang sekitar 2 detik setelah klik pertama, sedangkan kuncian selesai di sekitar 1,95 detik (sekitar 450 ms proses + 1,5 detik). Jadi lama kuncian saya naikkan menjadi 3 detik sebelum pengukuran. Prediksi di atas tidak saya ubah.
+
+- Hasil ukur (3 kali, CPU 4x, iPhone 16 393×852, trace yang dipakai rekaman ke-2):
+  - INP: 160 / 96 / 96 ms (median 96 ms). Baseline 280 ms, putaran 1 88 ms. Processing tetap 1-2 ms.
+  - Di setiap rekaman tercatat 3 klik pada .tombol-beli dengan jarak sekitar 4 detik (rekaman 2: 0; 4,1; 8,2 detik), dan setiap klik menghasilkan satu POST /api/pesanan. Log server mencatat 3 pesanan per rekaman ([After2-S3-terminal-pesanan.png](gambar/After2-S3-terminal-pesanan.png)).
+  - Pada rekaman ini, klik kedua dan ketiga saya lakukan setelah tombol aktif kembali (sesudah tulisan "Dipesan ✓" hilang). Klik pada tombol yang sedang nonaktif tidak dikirim browser ke halaman, jadi tidak muncul di trace maupun alat ukur. Jarak sekitar 4 detik itu cocok dengan lama kuncian (sekitar 0,5 detik proses + 3 detik "Dipesan ✓").
+
 - Prediksi vs kenyataan:
+  - Prediksi INP di bawah 150 ms tercapai (median 96 ms).
+  - Yang terbukti dari rekaman: selama tombol terkunci tidak ada pesanan yang lolos. Tidak ada satu pun POST yang terjadi kurang dari 3,5 detik setelah POST sebelumnya.
+  - Yang belum terbukti dengan rekaman manual: skenario "tiga klik secepat mungkin menghasilkan tepat 1 pesanan". Pada rekaman putaran 2 saya tidak mengklik saat tombol masih terkunci, jadi skenario itu tidak teruji di DevTools. Bukti untuk skenario ini sementara hanya dari uji otomatis di headless Chrome (tiga klik pada 0, 1, dan 2 detik menghasilkan 1 pesanan, dan klik keempat setelah tombol aktif kembali menghasilkan pesanan kedua). Uji otomatis ini tidak memakai protokol pengukuran, jadi saya catat sebagai bukti pendukung saja.
+
 - Efek samping:
+  1. Pengguna yang memang ingin memesan produk yang sama lagi harus menunggu sekitar 3,5 detik. Ini lebih lama dari prediksi efek samping (sekitar 2 detik) karena kuncian dinaikkan ke 3 detik.
+  2. Tulisan "Dipesan ✓" tampil 3 detik, bukan 1,5 detik seperti sebelumnya.
+  3. Kalau pesanan gagal, tombol langsung aktif lagi, jadi pengguna tetap bisa mencoba ulang.

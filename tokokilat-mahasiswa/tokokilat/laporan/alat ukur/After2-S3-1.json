@@ -1,0 +1,1 @@
+{ "waktu": "2026-10-15T17:33:22.483Z", "jumlahLongTask": 113, "longTaskTerlama": 252, "totalBlokir": 4661, "jumlahInteraksi": 4, "inp": 160, "inpRinci": { "durasi": 160, "jenis": "click", "target": ".tombol-beli", "tundaInput": 113, "proses": 2, "presentasi": 45 }, "cls": 0, "frameLambat": 116, "frameTerburuk": 236 }
