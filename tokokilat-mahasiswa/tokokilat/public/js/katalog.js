@@ -2,7 +2,7 @@
 
 import { $, el, formatRupiah, formatRibuan, hargaSetelahDiskon } from './util.js';
 import { tambahKeKeranjang, beliSekarang } from './keranjang.js';
-import { periksaGulir } from './gulir.js';
+import { amatiKartu, periksaGulir } from './gulir.js';
 
 export const keadaan = {
   semuaProduk: [],
@@ -84,6 +84,7 @@ export function renderProduk(daftar) {
     fragmen.append(buatKartu(produk));
   }
   kisi.append(fragmen);
+  amatiKartu(kisi);
 
   samakanTinggiJudul();
   $('#ringkasan').textContent = daftar.length.toLocaleString('id-ID') + ' produk ditampilkan';
