@@ -20,8 +20,8 @@ Masalah terbesar yang sudah ditangani adalah layar yang ngefreeze sekitar 1,8 de
 |---|---|---|---|---|---|
 | S0 | CLS | 0,473 | 0,003 | <= 0,1 | Ya |
 | S0 | Jumlah permintaan gambar dalam 10 dtk pertama | 3000 | | sebanding dengan yang terlihat | |
-| S1 | INP | | | <= 200 ms | |
-| S1 | Long task terlama | | | <= 100 ms | |
+| S1 | INP | 592 ms | | <= 200 ms | |
+| S1 | Long task terlama | 471 ms | | <= 100 ms | |
 | S2 | INP | | | <= 200 ms | |
 | S3 | Jumlah pesanan dari 3 klik | | | 1 | |
 | S4 | INP / progres tergambar bertahap? | 1824 ms / tidak | 104 ms / ya | <= 200 ms, bertahap | Ya |

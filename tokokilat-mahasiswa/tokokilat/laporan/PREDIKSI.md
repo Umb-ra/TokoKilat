@@ -219,3 +219,49 @@ Tanggal dan hash commit entri ini: 2026-10-13
   2. Ukuran chunk 100 produk terbukti menjadi titik kompromi yang ideal: cukup besar untuk meminimalkan overhead penjadwalan timer, namun cukup kecil untuk menjaga durasi per task tetap rendah (~40-60ms) sehingga tidak memicu long task ekstrem.
   3. Seluruh fitur voucher, diskon harga produk, simulasi cicilan, dan pembaruan tampilan kartu produk tetap berfungsi normal tanpa ada perubahan nilai kalkulasi maupun fitur yang rusak.
 
+---
+
+## P-01: Ketikan Telat dan Hang pada Pencarian
+
+**Tiket terkait:** TK-1041 (Bu Wulan)  
+**Tanggal dan hash commit entri ini:** 2026-10-15  
+
+### Sebelum perbaikan
+
+- **Yang teramati di trace (baseline):**
+  Di rekaman S1 (ketik kata `sepatu` huruf demi huruf lalu hapus semuanya), track Interactions menunjukkan balok-balok merah bergaris Keyboard interaction dengan INP mencapai **593 ms** (jauh di atas target <= 200 ms).
+  
+  Di screenshot flame chart ([gambar/S1-longtask-overview.png](gambar/S1-longtask-overview.png)), setiap ketukan huruf (`s`, `e`, `p`, `a`, `t`, `u`) dan setiap ketukan `Backspace` memicu satu Long Task besar di track Main. Terdapat total 12 Long Task berurutan, dengan long task terlama mencapai **471 ms** (target <= 100 ms).
+  
+  Di tab Bottom-Up ([gambar/S1-bottomup.png](gambar/S1-bottomup.png)), aktivitas yang paling memakan waktu CPU:
+  1. `Layout`: 1.964,7 ms (40,4% self time)
+  2. `Pre-paint` & `Paint`: 1.196,6 ms (24,7% self time)
+  3. `Recalculate style`: 374,6 ms (7,7% self time)
+  4. `renderProduk` (`katalog.js:69`): total waktu mencapai 1.898,8 ms (39,1% total time)
+  5. `periksaGulir` (`gulir.js:8`): total waktu mencapai 1.059,9 ms (21,8% total time)
+  6. `buatKartu` (`katalog.js:19`): total waktu 712,9 ms
+  7. `formatRupiah` (`util.js:12`): total waktu 291,8 ms (275,6 ms self time)
+  8. `f` (`vendor/lacak.min.js:2`): pemanggilan SDK memakan waktu pada setiap ketukan huruf
+
+- **Dugaan mekanisme:**
+  1. **Tidak ada debouncing pada event input:** Di `public/js/pencarian.js:45`, event listener `input` langsung memanggil `terapkanSaringan()` di setiap ketukan tanpa jeda. Huruf pertama `s` mencocokkan sekitar 2.900 dari 3.000 produk. Setiap ketukan menghancurkan seluruh DOM kartu (`kisi.innerHTML = ''`) dan membuat ulang ribuan elemen DOM dari nol. Ini memicu pipeline Style -> Layout -> Paint raksasa berulang-ulang di setiap huruf.
+  2. **Layout forced reflow di `periksaGulir`:** Di dalam `renderProduk`, fungsi `periksaGulir()` (`gulir.js:8`) membaca `getBoundingClientRect` untuk setiap kartu lalu menulis class/style, menghasilkan forced reflow di main thread.
+  3. **Pembuatan objek `Intl.NumberFormat` berulang kali:** Di `util.js:12-19`, `formatRupiah` membuat instansiasi `new Intl.NumberFormat('id-ID', ...)` baru di setiap pemanggilan. `buatKartu` memanggilnya 1-3 kali per produk, sehingga menghasilkan ribuan objek formatter yang membebani garbage collection dan CPU.
+  4. **SDK Lacak dipanggil di setiap keystroke:** `pencarian.js:40` memanggil `Lacak.kirim('search', ...)` pada setiap karakter, di mana fungsi `f()` SDK melakukan loop 2 juta iterasi dan kalkulasi hash.
+
+- **Rencana perubahan:**
+  1. Pasang mekanisme **debounce** (~250-300 ms) pada input pencarian, sehingga penyaringan dan render ulang hanya berjalan saat pengguna berhenti mengetik sejenak.
+  2. Lakukan **memoization / reuse pada `Intl.NumberFormat`** di `util.js` (dibuat satu kali di level modul dan dipakai ulang).
+  3. Kirim event analitik `Lacak.kirim('search', ...)` hanya setelah kata pencarian stabil (setelah debounce), bukan setiap huruf.
+  4. Kurangi beban layout thrashing saat merender kartu produk.
+
+- **Prediksi terukur:**
+  Setelah perbaikan:
+  1. INP pada skenario S1 turun dari **593 ms** menjadi **<= 200 ms** (target tercapai).
+  2. Long task terlama turun dari **471 ms** menjadi **<= 100 ms**.
+  3. Total durasi Layout turun drastis karena penghapusan pemanggilan render yang tidak perlu di tengah ketukan.
+  4. Responsivitas pengetikan terasa instan tanpa freezing atau huruf tertinggal.
+
+- **Alternatif yang dipertimbangkan dan alasan tidak dipilih:**
+  1. *Kenapa tidak virtual scroll penuh sekarang?* Virtual scrolling / infinite scroll lebih kompleks dan berisiko melanggar aturan tugas ("seluruh 3000 produk harus tetap bisa ditemukan lewat pencarian dan dijangkau dengan menggulir, serta jumlah hasil benar"). Debouncing dan memoize formatter adalah perbaikan yang sangat tepat sasaran untuk akar masalah ketikan telat (TK-1041) tanpa risiko merusak aksesibilitas produk.
+  2. *Kenapa tidak langsung Web Worker untuk filter?* Operasi pencarian `filter` teks di JS sebenarnya hanya memakan waktu beberapa milidetik. Biang kerok sebenarnya adalah penghancuran & pembuatan ulang ribuan DOM kartu serta instansiasi formatter, yang keduanya harus terjadi di main thread.
