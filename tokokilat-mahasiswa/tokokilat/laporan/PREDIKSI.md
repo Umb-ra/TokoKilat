@@ -384,3 +384,69 @@ Tanggal dan hash commit entri ini: 2026-10-13
   Mengejar optimasi di `kategori.js` atau mengganti bubble sort dengan quicksort adalah bentuk *premature optimization* yang tidak menghasilkan perbaikan terukur apa pun bagi keluhan pengguna (seperti freeze 1,8 detik di voucher atau ketikan telat 592 ms di pencarian).
 
 
+
+---
+
+## P-03: Scroll daftar produk patah-patah
+
+**Tiket terkait:** TK-1063
+**Tanggal dan hash commit entri ini:** 2026-10-15
+
+### Sebelum perbaikan
+
+- **Yang teramati di trace (baseline):**
+  Rekaman S5 (gulir daftar produk terus-menerus sekitar 10 detik) diambil dengan CPU 4x slowdown dan preset iPhone 16 (393×852). Tata letaknya sama dengan 412×915 karena keduanya sama-sama tampil 2 kolom. Rekaman diulang 3 kali, dan trace yang dipakai adalah rekaman pertama karena angkanya ada di tengah.
+
+  Di flame chart ([S5-longtask-overview.png](gambar/S5-longtask-overview.png)), track Main penuh garis merah long task dari awal sampai akhir, dan track Frames hampir seluruhnya kuning bergaris (frame telat atau tidak sempat tergambar). Di tab Summary, Rendering memakan 7.147 ms, sedangkan Scripting cuma 1.701 ms. Jadi waktunya bukan habis untuk menjalankan JavaScript, tapi untuk menghitung layout dan menggambar.
+
+  Di Bottom-Up ([S5-bottomup.png](gambar/S5-bottomup.png)), urutan teratas adalah Layout 3.719 ms (36,6%), Pre-paint 3.024 ms (29,8%), Commit 793 ms (7,8%), dan getBoundingClientRect dengan total 1.218 ms (12,0%). Di rekaman kedua dan ketiga, fungsi periksaGulir (gulir.js:8) memakan total 38-47% dari seluruh waktu rekaman.
+
+  Panel Insights langsung menandai "Forced reflow" ([S5-forced-reflow.png](gambar/S5-forced-reflow.png)). Fungsi pemicunya periksaGulir dengan total waktu reflow 2,11 detik, dan baris yang memaksa reflow adalah gulir.js:13 (scrollY), gulir.js:17 (scrollHeight), gulir.js:21 (innerHeight), dan gulir.js:24 (getBoundingClientRect).
+
+  Dari alat ukur, long task terlama 403 / 2.701 / 2.319 ms dan frame terburuk 727 / 3.011 / 2.587 ms (median 2.319 ms dan 2.587 ms). Angka jumlah frame lambat (123 / 484 / 582) tidak bisa dibandingkan antar rekaman karena alat ukur tetap menghitung sampai tombol "Salin JSON" ditekan, dan jedanya berbeda di tiap rekaman. Karena itu angka utama yang dipakai adalah angka dari trace.
+
+  Satu hal lagi yang menarik: di rekaman S2 (cuma satu klik, tanpa scroll sama sekali), Bottom-Up tetap didominasi Layout (30%) dan Commit (26%). Artinya halaman ini sudah sibuk menghitung layout bahkan saat tidak digulir.
+
+- **Dugaan mekanisme:**
+  Ada empat penyebab yang saling menumpuk.
+
+  Penyebab pertama, listener di gulir.js baris 46-52. Event touchmove dan wheel didaftarkan dengan passive: false, padahal touchmove juga memanggil preventDefault(). Akibatnya browser tidak berani menggeser halaman langsung di compositor thread. Browser harus menunggu main thread selesai menjalankan listener dulu untuk tahu apakah scroll dibatalkan atau tidak. Kalau main thread sedang sibuk, guliran ikut tertahan. Selain itu, periksaGulir terpanggil tiga kali untuk satu gerakan (dari wheel/touchmove, lalu dari scroll).
+
+  Penyebab kedua, layout thrashing di periksaGulir (gulir.js baris 8-37). Di awal fungsi ada penulisan (classList.toggle pada header, keAtas.hidden, bar.style.width), lalu dibaca lagi (scrollHeight, innerHeight). Setelah itu ada loop ke semua 3000 kartu, dan setiap kartu dipanggil getBoundingClientRect(). Di dalam loop yang sama ada penulisan classList.add('terlihat') dan style.minHeight. Karena layout sudah kotor oleh penulisan sebelumnya, pembacaan berikutnya memaksa browser menghitung layout ulang secara sinkron. Ini terjadi di setiap event scroll, padahal event scroll bisa muncul puluhan kali per detik.
+
+  Penyebab ketiga, pemanggilan SDK di tengah event scroll (gulir.js baris 36). Setiap ada kartu baru yang masuk layar, Lacak.kirim('impression') dipanggil saat itu juga. Di lacak.min.js, setiap kirim() menjalankan fungsi sidik jari f() yang berputar 2.000.000 kali, ditambah hash payload 12 putaran. Kerja berat ini masuk ke task yang sama dengan penanganan scroll.
+
+  Penyebab keempat, animasi CSS yang menyentuh layout. Efek kartu muncul (toko.css baris 84-85) menganimasikan margin-top dari 16px ke 0, sehingga setiap frame animasi butuh Layout ulang dan kartu di bawahnya ikut bergeser (ini juga yang menyebabkan beberapa titik di track Layout shifts saat scroll). Lencana kilat (toko.css baris 102-106) menganimasikan top dan box-shadow tanpa henti di setiap kartu flash sale. Kira-kira 8% dari 3000 produk adalah produk kilat, jadi ada sekitar 240 lencana yang memaksa Layout dan Paint setiap frame, baik saat scroll maupun saat diam. Ini cocok dengan temuan di S2 bahwa Layout tetap dominan walaupun halaman tidak digulir. Bar progres baca juga diubah lewat width, yang lagi-lagi properti layout.
+
+  Kesimpulannya, main thread terus penuh oleh Layout, sehingga frame tidak sempat dikirim tepat waktu dan guliran terasa patah-patah. Di HP kelas bawah seperti milik Bu Ningsih, efek ini makin terasa.
+
+- **Rencana perubahan:**
+  1. Listener: ubah touchmove dan wheel menjadi passive: true, dan hapus pemanggilan periksaGulir dari keduanya karena event scroll sudah cukup. Pencegahan pull-to-refresh diganti CSS overscroll-behavior-y: contain, jadi tidak perlu preventDefault() lagi.
+  2. Deteksi kartu masuk layar: ganti loop getBoundingClientRect di 3000 kartu dengan IntersectionObserver (rootMargin 80px, sama seperti batas yang dipakai sekarang). Browser sendiri yang menghitung kartu mana yang terlihat, di luar alur JavaScript kita, sehingga tidak ada forced reflow. renderProduk di katalog.js perlu mendaftarkan kartu baru ke observer setiap kali daftar digambar ulang (misalnya setelah pencarian). Header, tombol "Ke atas", dan bar progres cukup membaca scrollY, dan pembaruannya digabung dalam satu requestAnimationFrame per frame.
+  3. Impresi SDK: id kartu yang terlihat dikumpulkan dulu ke antrean, lalu dikirim sekali lewat Lacak.kirim('impression') saat browser senggang (requestIdleCallback dengan timeout). Sisa antrean dikirim saat halaman ditutup (visibilitychange). Event impression tetap terkirim, hanya waktunya yang dipindah.
+  4. Animasi CSS: efek kartu muncul diganti transform: translateY + opacity (minHeight di JS tidak dibutuhkan lagi). Lencana kilat dianimasikan dengan transform, dan efek cahayanya dipindah ke pseudo-element yang dianimasikan dengan opacity dan transform. Bar progres memakai transform: scaleX(). Semua properti ini bisa dikerjakan compositor tanpa Layout.
+
+  Perubahan dikerjakan satu commit per penyebab supaya kelihatan penyebab mana yang paling berpengaruh.
+
+- **Prediksi terukur:**
+  Setelah perubahan, total waktu forced reflow periksaGulir di panel Insights turun dari 2,11 detik menjadi mendekati 0, dan insight "Forced reflow" tidak muncul lagi untuk gulir.js. Porsi Layout di Bottom-Up turun dari 36,6% menjadi di bawah 10%, dan getBoundingClientRect hilang dari daftar teratas. Long task terlama saat scroll turun dari median 2.319 ms menjadi di bawah 100 ms, karena tidak ada lagi loop 3000 kartu dan pemanggilan SDK di tengah event scroll.
+
+  Untuk jumlah frame lambat, saya memperkirakan turun drastis, tapi belum tentu sampai target maksimal 2 per 10 detik. Alasannya, di P-04 Ihsan mencatat bahwa saat diam pun masih ada 163 frame lambat yang penyebabnya belum semuanya diketahui. Kalau dugaan saya benar bahwa sebagian besar berasal dari animasi lencana kilat, perubahan nomor 4 juga akan ikut menurunkan angka itu. Pada pengukuran ulang, tombol "Salin JSON" akan ditekan langsung setelah Stop supaya angkanya bisa dibandingkan.
+
+  Prediksi efek samping:
+  1. Kartu bisa muncul sedikit lebih telat, karena callback IntersectionObserver dijalankan setelah frame dihitung, bukan langsung di dalam event scroll. Seharusnya tidak terasa karena rootMargin 80px membuat kartu sudah disiapkan sebelum benar-benar masuk layar.
+  2. Impresi yang masih di antrean bisa hilang kalau tab ditutup paksa sebelum sempat terkirim. Ini dikurangi dengan pengiriman saat visibilitychange, tapi tidak bisa dijamin 100%.
+  3. Bentuk denyut lencana kilat bisa sedikit berbeda karena gerakannya dibuat dengan transform, bukan top dan box-shadow. Fitur penanda kilatnya tetap ada.
+
+- **Alternatif yang dipertimbangkan dan alasan tidak dipilih:**
+  1. Kenapa tidak throttle atau debounce periksaGulir saja (misalnya jalan tiap 100ms)? - Bebannya memang berkurang, tapi setiap kali jalan tetap membaca posisi 3000 kartu dan tetap memicu forced reflow. Kartu juga bisa telat muncul. Masalahnya ada di cara mendeteksi, bukan di frekuensinya.
+  2. Kenapa tidak pakai virtual list (hanya membuat elemen untuk kartu yang terlihat)? - Ini paling hemat, tapi perubahannya besar dan berisiko. Tugas mewajibkan semua produk tetap bisa dijangkau dengan menggulir dan jumlah hasil harus benar, dan virtual list juga bisa merusak pencarian Ctrl+F di halaman. Untuk masalah scroll, sumber beban terbesarnya ada di forced reflow dan animasi, bukan di jumlah elemen itu sendiri.
+  3. Kenapa tidak menambahkan will-change: transform ke semua kartu? - Browser akan membuat layer terpisah untuk 3000 kartu, sehingga memori GPU membengkak. Di HP kelas bawah ini justru bisa membuat halaman lebih berat.
+  4. Kenapa tidak menghapus efek kartu muncul atau animasi lencana saja? - Keduanya termasuk fitur yang tidak boleh dihapus menurut aturan tugas. Yang diubah hanya caranya.
+
+### Sesudah perbaikan
+
+- Hash commit perbaikan:
+- Hasil ukur (median 3 kali):
+- Prediksi vs kenyataan:
+- Efek samping:
