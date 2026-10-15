@@ -5,7 +5,7 @@ minimal dua tiket, sebaiknya di branch terpisah. Uji usulannya dengan protokol p
 Temukan minimal **dua** usulan bermasalah. Usulan AI yang bagus juga boleh dicatat, tetapi tidak
 menggantikan dua temuan wajib.
 
-Alat AI yang dipakai: Antigravity, Claude, ChatGPT.  Branch atau commit tempat usulan diterapkan: main  Peninjau: Fariz Dhifa Fakhriza (241524040)
+Alat AI yang dipakai: Antigravity, Claude, ChatGPT.  Branch atau commit tempat usulan diterapkan: main  Peninjau: Fariz Dhifa Fakhriza (241524040) untuk A-01 dan A-02, Lukman Ahmad (241524050) untuk A-03 dan A-04
 
 ---
 
@@ -79,6 +79,62 @@ Alat AI yang dipakai: Antigravity, Claude, ChatGPT.  Branch atau commit tempat u
   AI mengambil solusi umum yang sering beredar di internet (*lazy pagination*) tanpa membaca batasan dan aturan bisnis yang berlaku pada tugas ini. AI juga cenderung "mengambil jalan pintas" dengan menghapus kode yang berat (seperti SDK Lacak) daripada memperbaiki waktu dan cara pemanggilannya.
 - **Perbaikan yang benar menurut tim:**
   Pertahankan seluruh 3000 produk dan tetap kirim event SDK. Cukup pasang debounce 250 ms pada input kolom cari, gunakan kembali satu instans `Intl.NumberFormat` di level modul, dan kirim event `Lacak.kirim` satu kali saja setelah pengguna selesai mengetik kata kunci.
+
+---
+
+## A-03: AI memindahkan beban scroll ke tahap rendering (regresi Commit dan IntersectionObserver)
+
+- **Tiket yang diminta diperbaiki:** TK-1063 (scroll patah-patah)
+- **Prompt yang diberikan (ringkas):** Claude Code diminta memperbaiki scroll patah-patah berdasarkan trace baseline S5 dan prediksi P-03 yang sudah ditulis (listener non-passive, forced reflow di periksaGulir, SDK di event scroll, animasi margin-top/top).
+- **Usulan AI (ringkas, sertakan potongan kode yang relevan):**
+  AI mengganti loop getBoundingClientRect dengan IntersectionObserver yang mengamati semua 3000 kartu terus-menerus, dan mengganti efek muncul kartu dari margin-top menjadi transform yang dipasang di semua kartu sejak awal:
+  ```css
+  .kartu { opacity: 0; transform: translateY(16px); transition: opacity .35s ease, transform .35s ease; }
+  .kartu.terlihat { opacity: 1; transform: none; }
+  ```
+  ```js
+  pengamatKartu = new IntersectionObserver(saatKartuBerubah, { rootMargin: '80px 0px' });
+  akar.querySelectorAll('.kartu').forEach((kartu) => pengamatKartu.observe(kartu)); // tidak pernah di-unobserve
+  ```
+- **Jenis masalah pada usulan:**
+  - [ ] Salah diagnosis (memperbaiki hal yang bukan penyebab)
+  - [x] Tidak lengkap (gejala berkurang tetapi akar masalah masih ada)
+  - [x] Menimbulkan regresi (metrik lain, fitur, aksesibilitas, atau memori memburuk)
+  - [ ] Melanggar aturan main (menghapus fitur, mengubah berkas terlarang, dan sebagainya)
+  - [ ] Memperbaiki sesuatu yang tidak berpengaruh terukur
+- **Bukti:**
+  Trace [After-S5-Trace2](trace/After-S5-Trace2-20261015T233123.json.gz) dibandingkan dengan baseline [S5-Trace1](trace/S5-Trace1-20261015T224505.json.gz). Penanganan event scroll memang turun dari 4.238 ms ke 21 ms, tapi Commit naik dari 860 ms ke 3.700 ms dan IntersectionObserver naik dari 789 ms ke 3.655 ms ([After-S5-bottomup.png](gambar/After-S5-bottomup.png), Commit 45,5%). Forced reflow juga muncul lagi di fungsi baru perbaruiTampilanGulir ([After-S5-forced-reflow.png](gambar/After-S5-forced-reflow.png)). Long task terlama hanya turun dari 405 ms ke 116 ms, masih di atas 100 ms.
+- **Mengapa AI bisa keliru di sini:**
+  AI menerapkan aturan umum "pakai transform dan IntersectionObserver karena lebih murah" tanpa menghitung skalanya. Transform yang bukan none pada 3000 kartu membuat ribuan node transform ikut dikirim ke compositor di setiap commit, dan 3000 target observer dihitung ulang setiap frame. Teknik yang murah untuk satu elemen ternyata mahal untuk 3000 elemen. Uji fungsi AI di headless Chrome juga hanya memeriksa apakah fitur jalan, bukan biaya renderingnya.
+- **Perbaikan yang benar menurut tim:**
+  Kartu dilepas dari observer setelah muncul, animasi muncul hanya dipasang pada kartu yang sedang terlihat, dan penulisan DOM digabung sekali per frame (commit 3a74c09). Commit turun lagi ke 2.050 ms. Beban IntersectionObserver belum turun, kemungkinan karena content-visibility, sehingga masih tercatat di bagian rekomendasi LAPORAN.
+
+---
+
+## A-04: AI membuat penjaga pesanan ganda yang hanya teruji oleh klik otomatis
+
+- **Tiket yang diminta diperbaiki:** TK-1052 (satu pembelian jadi tiga pesanan)
+- **Prompt yang diberikan (ringkas):** Claude Code diminta mencegah pesanan ganda pada "Beli sekarang" sesuai prediksi P-07.
+- **Usulan AI (ringkas, sertakan potongan kode yang relevan):**
+  AI menonaktifkan tombol saat diklik dan mengaktifkannya lagi segera setelah server menjawab:
+  ```js
+  tombol.disabled = true;
+  try { /* fetch POST /api/pesanan */ tombol.textContent = 'Dipesan ✓'; }
+  finally { pesananDiproses.delete(produk.id); tombol.disabled = false; }
+  ```
+  AI mengujinya di headless Chrome dengan tiga panggilan .click() berturut-turut dalam hitungan milidetik, hasilnya satu pesanan, lalu menyatakan perbaikan selesai.
+- **Jenis masalah pada usulan:**
+  - [ ] Salah diagnosis (memperbaiki hal yang bukan penyebab)
+  - [x] Tidak lengkap (gejala berkurang tetapi akar masalah masih ada)
+  - [ ] Menimbulkan regresi (metrik lain, fitur, aksesibilitas, atau memori memburuk)
+  - [ ] Melanggar aturan main (menghapus fitur, mengubah berkas terlarang, dan sebagainya)
+  - [ ] Memperbaiki sesuatu yang tidak berpengaruh terukur
+- **Bukti:**
+  Rekaman S3 sesudah perbaikan ([After-S3-Trace1](trace/After-S3-Trace1-20261016T002230.json.gz)) tetap mencatat tiga POST /api/pesanan dan tiga pesanan di log server ([After-S3-terminal-pesanan.png](gambar/After-S3-terminal-pesanan.png)). Waktu klik di trace adalah 0, 1.102, dan 2.099 ms, sedangkan POST selesai dalam sekitar 360 ms. Tombol sudah aktif lagi sebelum klik kedua datang, jadi penjaga tidak berpengaruh untuk pola klik manusia. Baseline punya pola yang sama (0, 933, 2.030 ms).
+- **Mengapa AI bisa keliru di sini:**
+  AI menguji dengan pola klik yang tidak realistis. Tiga .click() dalam satu skrip terjadi dalam hitungan milidetik, jauh lebih cepat dari jari manusia di HP yang diperlambat 4x. Akibatnya jendela penjagaan 360 ms terlihat cukup, padahal klik manusia berjarak sekitar 1 detik. AI juga tidak memperhitungkan bahwa tulisan "Dipesan ✓" masih tampil saat tombol sudah aktif, yang justru mengundang pengguna memencet lagi.
+- **Perbaikan yang benar menurut tim:**
+  Tombol tetap nonaktif selama tulisan "Dipesan ✓" tampil (commit 737216e). AI awalnya mengusulkan 1,5 detik, tetapi setelah diuji dengan pola klik dari trace (0, 1, 2 detik) masih lolos satu pesanan, sehingga dinaikkan ke 3 detik. Solusi paling kuat tetap idempotency key di server, yang direkomendasikan ke tim backend. Penjaga di klien hanya mengurangi peluang pesanan ganda. Selama server menerima pesanan duplikat tanpa kunci unik, akar masalahnya belum hilang sepenuhnya.
 
 ---
 
