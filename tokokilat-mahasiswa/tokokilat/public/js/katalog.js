@@ -77,9 +77,11 @@ export function renderProduk(daftar) {
     kisi.append(kosong);
   }
 
+  const fragmen = document.createDocumentFragment();
   for (const produk of daftar) {
-    kisi.append(buatKartu(produk));
+    fragmen.append(buatKartu(produk));
   }
+  kisi.append(fragmen);
 
   samakanTinggiJudul();
   $('#ringkasan').textContent = daftar.length.toLocaleString('id-ID') + ' produk ditampilkan';

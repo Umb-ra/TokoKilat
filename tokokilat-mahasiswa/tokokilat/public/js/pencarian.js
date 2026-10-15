@@ -15,8 +15,15 @@ function normalkan(teks) {
     .trim();
 }
 
+function teksProduk(produk) {
+  if (!produk._teksCari) {
+    produk._teksCari = normalkan(produk.nama + ' ' + produk.merek + ' ' + produk.kategori + ' ' + produk.kota);
+  }
+  return produk._teksCari;
+}
+
 function cocok(produk, kunci) {
-  const teks = normalkan(produk.nama + ' ' + produk.merek + ' ' + produk.kategori + ' ' + produk.kota);
+  const teks = teksProduk(produk);
   return kunci.split(' ').every((k) => teks.includes(k));
 }
 
@@ -42,9 +49,13 @@ export function terapkanSaringan() {
 
 export function pasangPencarian() {
   const kolom = $('#kolom-cari');
+  let pengaturWaktuDebounce;
   kolom.addEventListener('input', () => {
     saringan.kata = kolom.value;
-    terapkanSaringan();
+    clearTimeout(pengaturWaktuDebounce);
+    pengaturWaktuDebounce = setTimeout(() => {
+      terapkanSaringan();
+    }, 250);
   });
 
   $('#pilih-urut').addEventListener('change', (e) => {
