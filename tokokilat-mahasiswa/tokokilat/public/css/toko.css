@@ -103,6 +103,7 @@ button { cursor: pointer; }
 .aksi button { border-radius: 8px; padding: 9px 4px; font-size: 13px; font-weight: 700; min-height: 40px; }
 .tombol-tambah { background: var(--putih); border: 1.5px solid var(--nila); color: var(--nila); }
 .tombol-beli { background: var(--nila); border: 1.5px solid var(--nila); color: var(--putih); }
+.tombol-beli:disabled { opacity: .7; cursor: progress; }
 .tombol-tambah.sudah { background: var(--hijau); border-color: var(--hijau); color: var(--putih); }
 
 .lencana-kilat { position: absolute; top: 8px; left: 8px; z-index: 1; background: var(--kilat); color: var(--tinta); font-size: 11px; font-weight: 900; padding: 3px 8px; border-radius: 4px; }

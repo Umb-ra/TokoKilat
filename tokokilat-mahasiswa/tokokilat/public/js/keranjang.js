@@ -65,52 +65,88 @@ function gambarPanel() {
   $('#total-keranjang').textContent = formatRupiah(total);
 }
 
-export function tambahKeKeranjang(produk, tombol) {
+// Beri browser kesempatan menggambar frame dulu. await biasa hanya microtask dan tidak
+// memberi kesempatan render, jadi ditunggu sampai frame berikutnya lalu lanjut di task baru.
+function tungguFrameTergambar() {
+  return new Promise((selesai) => requestAnimationFrame(() => setTimeout(selesai, 0)));
+}
+
+// Lacak.kirim() menghitung hash atas seluruh payload 12 kali. Riwayat lengkap (~9000 entri,
+// ~1,2 MB JSON) membuat satu klik memakan puluhan ms, jadi yang dikirim hanya ringkasannya.
+// Riwayat lengkap tetap tersimpan di localStorage untuk tim rekomendasi.
+function ringkasRiwayat(riwayat) {
+  return { terakhir: riwayat.slice(-20), jumlah: riwayat.length };
+}
+
+// Riwayat dibaca, ditambah, dikirim ke SDK, dan disimpan dalam satu task tersendiri,
+// setelah tampilan tombol sempat diperbarui.
+function catatAktivitas(jenis, produk, dataEvent) {
   const konfig = salinDalam(KONFIG);
-  const keranjang = bacaKeranjang();
   const riwayat = bacaRiwayat();
-
-  const ada = keranjang.find((item) => item.id === produk.id);
-  if (ada) ada.jumlah = Math.min(ada.jumlah + 1, konfig.maksPerProduk);
-  else keranjang.push({ id: produk.id, nama: produk.nama, harga: hargaSetelahDiskon(produk), jumlah: 1 });
-
-  riwayat.push({ t: Date.now(), jenis: 'keranjang', id: produk.id, nama: produk.nama, kategori: produk.kategori, harga: produk.harga });
-
-  // Tim data minta konteks selengkap mungkin di setiap event.
-  window.Lacak.kirim('add_to_cart', { produk, keranjang, riwayat, sumber: konfig.sumber });
-
-  simpanKeranjang(keranjang);
+  riwayat.push({ t: Date.now(), jenis, id: produk.id, nama: produk.nama, kategori: produk.kategori, harga: produk.harga });
+  window.Lacak.kirim(jenis === 'beli' ? 'begin_checkout' : 'add_to_cart',
+    { ...dataEvent, produk, riwayat: ringkasRiwayat(riwayat), sumber: konfig.sumber });
   simpanRiwayat(riwayat);
+}
 
-  // Data sudah aman tersimpan, baru tampilan diperbarui.
+export async function tambahKeKeranjang(produk, tombol) {
+  // Keranjang kecil, jadi langsung disimpan. Tampilan diperbarui di task yang sama
+  // supaya pengguna langsung melihat klik-nya diterima.
+  const keranjang = bacaKeranjang();
+  const ada = keranjang.find((item) => item.id === produk.id);
+  if (ada) ada.jumlah = Math.min(ada.jumlah + 1, KONFIG.maksPerProduk);
+  else keranjang.push({ id: produk.id, nama: produk.nama, harga: hargaSetelahDiskon(produk), jumlah: 1 });
+  simpanKeranjang(keranjang);
+
   perbaruiLencana();
   tombol.textContent = 'Ditambahkan ✓';
   tombol.classList.add('sudah');
-  setTimeout(() => {
+  clearTimeout(tombol.pengaturWaktu);
+  tombol.pengaturWaktu = setTimeout(() => {
     tombol.textContent = '+ Keranjang';
     tombol.classList.remove('sudah');
   }, 1500);
   tampilkanToast('Ditambahkan ke keranjang: ' + produk.nama);
+
+  // Kerja berat (riwayat + SDK) setelah frame dengan umpan balik tergambar.
+  await tungguFrameTergambar();
+  catatAktivitas('keranjang', produk, { keranjang });
 }
 
+const pesananDiproses = new Set();
+
 export async function beliSekarang(produk, tombol) {
-  const konfig = salinDalam(KONFIG);
-  const riwayat = bacaRiwayat();
-  riwayat.push({ t: Date.now(), jenis: 'beli', id: produk.id, nama: produk.nama, kategori: produk.kategori, harga: produk.harga });
-  window.Lacak.kirim('begin_checkout', { produk, riwayat, sumber: konfig.sumber });
-  simpanRiwayat(riwayat);
+  // Penjaga pesanan ganda: klik berikutnya ditolak selama pesanan pertama belum dijawab server.
+  if (pesananDiproses.has(produk.id)) return;
+  pesananDiproses.add(produk.id);
+  tombol.disabled = true;
+  tombol.setAttribute('aria-busy', 'true');
+  tombol.textContent = 'Memproses…';
 
-  const respons = await fetch('/api/pesanan', {
-    method: 'POST',
-    headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify({ produkId: produk.id, nama: produk.nama }),
-  });
-  const pesanan = await respons.json();
+  try {
+    await tungguFrameTergambar();
+    catatAktivitas('beli', produk, {});
 
-  tombol.textContent = 'Dipesan ✓';
-  setTimeout(() => { tombol.textContent = 'Beli sekarang'; }, 1500);
-  tampilkanToast('Pesanan ' + pesanan.id + ' dibuat: ' + produk.nama);
-  perbaruiLencanaPesanan();
+    const respons = await fetch('/api/pesanan', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ produkId: produk.id, nama: produk.nama }),
+    });
+    if (!respons.ok) throw new Error('Server menjawab ' + respons.status);
+    const pesanan = await respons.json();
+
+    tombol.textContent = 'Dipesan ✓';
+    setTimeout(() => { tombol.textContent = 'Beli sekarang'; }, 1500);
+    tampilkanToast('Pesanan ' + pesanan.id + ' dibuat: ' + produk.nama);
+    perbaruiLencanaPesanan();
+  } catch (galat) {
+    tombol.textContent = 'Beli sekarang';
+    tampilkanToast('Pesanan gagal dibuat, silakan coba lagi.');
+  } finally {
+    pesananDiproses.delete(produk.id);
+    tombol.disabled = false;
+    tombol.removeAttribute('aria-busy');
+  }
 }
 
 export async function perbaruiLencanaPesanan() {
