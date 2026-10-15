@@ -5,7 +5,7 @@ minimal dua tiket, sebaiknya di branch terpisah. Uji usulannya dengan protokol p
 Temukan minimal **dua** usulan bermasalah. Usulan AI yang bagus juga boleh dicatat, tetapi tidak
 menggantikan dua temuan wajib.
 
-Alat AI yang dipakai: Antigravity, Claude, ChatGPT.  Branch atau commit tempat usulan diterapkan: main
+Alat AI yang dipakai: Antigravity, Claude, ChatGPT.  Branch atau commit tempat usulan diterapkan: main  Peninjau: Fariz Dhifa Fakhriza (241524040)
 
 ---
 
