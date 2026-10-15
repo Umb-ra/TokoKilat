@@ -588,7 +588,55 @@ Tanggal dan hash commit entri ini: 2026-10-13
   3. Idempotency key di server (setiap pesanan membawa kunci unik, server menolak kunci yang sama). Ini cara paling kuat, terutama untuk kasus jaringan putus lalu mengulang, tetapi server.js tidak boleh diubah. Disimpan sebagai rekomendasi untuk tim backend.
   4. Memindahkan pemanggilan SDK ke Web Worker. SDK memakai window dan document, jadi tidak bisa dijalankan di worker tanpa mengubah berkas SDK, dan itu dilarang.
 
-### Sesudah perbaikan
+### Sesudah perbaikan (putaran 1)
+
+- Hash commit perbaikan: (lihat commit "perbaiki: umpan balik tombol dulu, ringkas payload SDK, cegah pesanan ganda saat beli sekarang")
+
+- Hasil ukur (3 kali, CPU 4x, iPhone 16 393×852):
+
+  S2, "+ Keranjang" satu kali (trace rekaman ke-2):
+  - INP: 264 / 272 / 256 ms (median 264) -> 96 / 128 / 144 ms (median 128). Target paling lama 200 ms tercapai.
+  - Rincian INP rekaman median: input delay 42 ms, processing 2 ms, presentation delay 84 ms ([After-S2-inp-breakdown.png](gambar/After-S2-inp-breakdown.png)). Processing turun dari 139 ms menjadi 2 ms.
+  - Di flame chart, blok tambahKeKeranjang di dalam Event: click sekarang sangat pendek. Pemanggilan Lacak.kirim pindah ke task tersendiri setelah frame dengan tulisan "Ditambahkan ✓" tergambar.
+
+  S3, "Beli sekarang" tiga kali (trace rekaman ke-1):
+  - INP: 312 / 280 / 280 ms (median 280) -> 88 / 136 / 88 ms (median 88). Processing turun dari 123 ms menjadi 1 ms.
+  - Tombol langsung berubah menjadi "Memproses…" dan nonaktif setelah klik pertama.
+  - Jumlah pesanan tetap 3 per rekaman (track Network: tiga POST /api/pesanan dari keranjang.js:130, log server TK-00001 sampai TK-00003, lihat [After-S3-terminal-pesanan.png](gambar/After-S3-terminal-pesanan.png)).
+
+- Prediksi vs kenyataan:
+
+  Prediksi untuk S2 tepat, malah lebih baik di bagian processing (2 ms). INP median 128 ms, sedikit di atas prediksi di bawah 100 ms. Sisa waktunya ada di input delay dan presentation delay (Layout dan Commit dari halaman berisi 3000 kartu), yang tidak berasal dari handler keranjang dan lebih terkait P-03.
+
+  Prediksi INP S3 juga tercapai (88 ms, target di bawah 150 ms).
+
+  Prediksi "tiga klik cepat menghasilkan tepat satu pesanan" meleset. Setelah dicek di trace, jarak antar klik di semua rekaman sekitar 1 detik (rekaman 1: klik pada 0, 1.102, dan 2.099 ms; POST pada 91, 1.205, dan 2.198 ms). Di baseline jaraknya juga sama (0, 933, 2.030 ms). Penjaga yang saya buat hanya menahan tombol selama pesanan sedang dikirim ke server, yaitu sekitar 360 ms. Setelah server menjawab, tombol aktif lagi dengan tulisan "Dipesan ✓", sehingga klik berikutnya yang datang sekitar 1 detik kemudian dianggap pesanan baru. Pada uji otomatis di headless Chrome, tiga klik dikirim dalam hitungan milidetik dan hasilnya memang hanya 1 pesanan, tapi pola klik manusia ternyata lebih lambat dari jendela penjagaan itu.
+
+  Jadi masalah pesanan ganda baru teratasi sebagian: klik ganda yang terjadi selama pesanan diproses sudah tertahan, tapi klik ulang setelah pesanan selesai belum.
+
+- Efek samping:
+  1. Event add_to_cart dan begin_checkout tetap terkirim, tapi riwayat di dalamnya sekarang ringkasan (20 entri terakhir + jumlah total). Riwayat lengkap tetap ada di localStorage.
+  2. Dari sisi pengguna, kesan "tombol tidak bereaksi" sudah hilang. Tulisan "Ditambahkan ✓" dan "Memproses…" muncul di frame berikutnya setelah klik.
+  3. Saat ini tidak terlihat efek samping lain pada keranjang, lencana, maupun toast.
+
+### Sebelum perbaikan (putaran 2)
+
+- **Yang teramati (hasil putaran 1):** di ketiga rekaman S3, klik kedua dan ketiga datang sekitar 0,9-1,1 detik setelah klik sebelumnya, sedangkan POST /api/pesanan selesai dalam sekitar 360 ms. Ketiga klik tercatat sebagai click pada .tombol-beli di alat ukur, artinya tombol sudah aktif lagi saat klik berikutnya datang.
+
+- **Dugaan mekanisme:** penjagaan hanya berlaku dari klik sampai server menjawab. Setelah itu blok finally langsung mengaktifkan tombol lagi, padahal tulisan "Dipesan ✓" masih tampil selama 1,5 detik. Pengguna yang memencet lagi dalam rentang itu tidak dicegah, dan setiap klik membuat pesanan baru.
+
+- **Rencana perubahan:** tombol tetap nonaktif selama tulisan "Dipesan ✓" tampil (1,5 detik setelah pesanan berhasil), baru setelah itu kembali menjadi "Beli sekarang" dan aktif. Penanda pesananDiproses juga baru dilepas saat itu. Kalau pesanan gagal, tombol langsung aktif lagi supaya bisa dicoba ulang.
+
+- **Prediksi terukur:** dengan pola klik yang sama (jarak sekitar 1 detik), tiga klik pada S3 menghasilkan tepat 1 pesanan: satu POST /api/pesanan di track Network, satu baris di log server, dan lencana Pesanan bernilai 1. Klik kedua dan ketiga tidak lagi tercatat sebagai click pada .tombol-beli karena tombolnya nonaktif. INP tetap di bawah 150 ms karena handler tidak berubah.
+
+  Prediksi efek samping: pengguna yang memang ingin memesan produk yang sama lagi harus menunggu sekitar 2 detik (proses ditambah 1,5 detik). Kalau ada klik yang datang lebih dari 1,5 detik setelah pesanan selesai, klik itu tetap dianggap pesanan baru, dan ini memang disengaja.
+
+- **Alternatif yang dipertimbangkan:**
+  1. Tombol nonaktif permanen setelah satu pesanan. Tidak dipilih karena pengguna jadi tidak bisa memesan produk yang sama lagi tanpa memuat ulang halaman.
+  2. Konfirmasi "Pesan lagi?" untuk pesanan kedua dalam beberapa detik. Lebih aman, tapi menambah langkah dan dialog konfirmasi bawaan browser memblokir main thread.
+  3. Idempotency key di server. Tetap menjadi rekomendasi untuk tim backend karena server.js tidak boleh diubah.
+
+### Sesudah perbaikan (putaran 2)
 
 - Hash commit perbaikan:
 - Hasil ukur (median 3 kali):
