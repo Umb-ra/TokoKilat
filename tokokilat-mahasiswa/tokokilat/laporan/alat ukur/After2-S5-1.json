@@ -1,0 +1,12 @@
+{
+  "waktu": "2026-10-15T17:12:03.100Z",
+  "jumlahLongTask": 1312,
+  "longTaskTerlama": 1365,
+  "totalBlokir": 61637,
+  "jumlahInteraksi": 4,
+  "inp": 80,
+  "cls": 0,
+  "frameLambat": 1294,
+  "frameTerburuk": 1757,
+  "catatan": "Reset tertekan sebelum halaman selesai dimuat, angka tercampur beban pemuatan. Tidak dipakai."
+}

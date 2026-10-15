@@ -512,7 +512,33 @@ Tanggal dan hash commit entri ini: 2026-10-13
 
 ### Sesudah perbaikan (putaran 2)
 
-- Hash commit perbaikan:
-- Hasil ukur (median 3 kali):
+- Hash commit perbaikan: 3a74c09
+
+- Hasil ukur (3 kali, CPU 4x, iPhone 16 393×852, trace yang dipakai rekaman ke-3). Rekaman ke-1 tidak dipakai karena tombol Reset tertekan sebelum halaman selesai dimuat, sehingga alat ukur ikut menghitung beban pemuatan 3000 kartu (1.312 long task).
+
+  Angka dari trace, baseline -> putaran 1 -> putaran 2 (rekaman 2 / 3):
+  - Long task terlama: 405 ms -> 116 ms -> 125 / 119 ms
+  - Long task di atas 100 ms: 37 -> 19 -> 4 / 20
+  - Layout: 3.723 ms -> 2.225 ms -> 1.622 / 1.892 ms
+  - Pre-paint: 3.024 ms -> 364 ms -> 661 / 682 ms
+  - Commit: 860 ms -> 3.700 ms -> 2.307 / 2.050 ms
+  - IntersectionObserver: 789 ms -> 3.655 ms -> 4.158 / 3.681 ms
+  - Callback requestAnimationFrame: 52 ms -> 1.697 ms -> 196 / 176 ms
+  - EventDispatch (scroll): 4.238 ms -> 21 ms -> 844 / 953 ms
+
+  Dari alat ukur (rekaman 3): long task terlama 119 ms, frame lebih dari 50 ms sebanyak 120 dengan frame terburuk 152 ms (baseline: frame terburuk 727 ms), CLS 0.
+
+  Insight "Forced reflow" masih ada ([After2-S5-forced-reflow.png](gambar/After2-S5-forced-reflow.png)), sekarang pemicunya di listener scroll (gulir.js:108, pembacaan scrollY).
+
 - Prediksi vs kenyataan:
-- Efek samping:
+
+  Yang tepat: Commit turun 45% dari putaran 1 (3.700 -> 2.050 ms) setelah kartu yang belum muncul tidak lagi diberi transform. Callback requestAnimationFrame turun 90% (1.697 -> 176 ms) karena tidak ada lagi pembacaan scrollHeight di dalamnya. Layout turun lagi sedikit (2.225 -> 1.892 ms).
+
+  Yang meleset:
+  1. IntersectionObserver tidak turun sama sekali (tetap sekitar 3.700 ms). Dugaan saya bahwa bebannya berasal dari 3000 target observer ternyata tidak lengkap. Penjelasan yang paling mungkin: content-visibility: auto yang saya tambahkan di putaran yang sama juga memakai perhitungan perpotongan dengan layar untuk setiap kartu (browser perlu tahu kapan kartu masuk dan keluar layar untuk memutuskan apakah isinya digambar). Jadi beban yang saya hapus dari observer JavaScript digantikan oleh beban yang sama dari content-visibility. Ini belum saya buktikan dengan rekaman terpisah tanpa content-visibility.
+  2. Forced reflow tidak hilang, hanya pindah ke listener scroll. Dugaan saya bahwa saat event scroll layout selalu bersih ternyata keliru. Kemungkinan perubahan status content-visibility atau kelas kartu di frame sebelumnya membuat layout kotor, lalu pembacaan scrollY memaksanya dihitung. Ini juga yang membuat EventDispatch naik lagi dari 21 ms ke sekitar 900 ms.
+  3. Long task terlama masih sekitar 120 ms, belum di bawah 100 ms. Target frame lambat maksimal 2 per 10 detik juga belum tercapai (120 frame), walaupun frame terburuk turun jauh dari 727 ms ke 152 ms.
+
+- Efek samping: semua fitur tetap jalan (kartu muncul dengan animasi, lencana berdenyut saat terlihat, bar progres, bayangan header, tombol "Ke atas", impresi terkirim, pencarian tetap menampilkan jumlah yang benar). Tidak terlihat panjang scrollbar berubah-ubah saat digulir.
+
+- Kesimpulan P-03: dibanding baseline, scroll jelas lebih ringan. Long task terlama turun dari 405 ms ke sekitar 120 ms, frame terburuk dari 727 ms ke 152 ms, Layout turun 49%, dan Pre-paint turun 77%. Tapi ada dua beban yang naik dibanding baseline, yaitu IntersectionObserver (789 -> 3.681 ms) dan Commit (860 -> 2.050 ms), dan target frame lambat belum tercapai. Perbaikan tidak saya lanjutkan ke putaran 3 karena keterbatasan waktu. Langkah yang paling masuk akal berikutnya adalah mengukur ulang tanpa content-visibility untuk memastikan dugaan nomor 1, dan memindahkan bar progres serta bayangan header ke scroll-driven animation di CSS supaya listener scroll tidak membaca posisi sama sekali.
