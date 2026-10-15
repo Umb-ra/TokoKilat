@@ -4,8 +4,7 @@ Tim: HebatKenapa  Anggota: Ihsan Fauzi (241524048), ....  Tanggal: 13 Oktober 20
 Panjang maksimal setara 6 halaman (tidak termasuk lampiran gambar).
 
 ## 1. Ringkasan eksekutif (maks. 150 kata)
-Draf sementara setelah pengujian S0, S4, dan S6. 
-Masalah terbesar yang sudah ditangani adalah layar yang ngefreeze sekitar 1,8 detik saat pelanggan memakai voucher. Penyebabnya perhitungan 3000 produk yang ditulis seolah-olah asinkron, padahal tetap memblokir browser. Perhitungan dipecah menjadi potongan kecil sehingga progres terlihat bertahap, dan INP turun dari 1824 ms menjadi 104 ms. Halaman yang meloncat saat dimuat diperbaiki dengan menyiapkan ruang banner dari awal, sehingga CLS turun dari 0,473 menjadi 0,003. Beban CPU saat halaman dibiarkan diam berkurang (frame lambat 271 menjadi 163), tetapi belum mencapai target dua frame lambat per 10 detik dan masih perlu diselidiki.
+Laporan audit performa halaman flash sale TokoKilat setelah perbaikan S0, S1, S4, dan S6. Masalah freeze 1,8 detik saat klaim voucher (S4) diatasi dengan pemecahan loop menjadi chunk kecil (INP turun dari 1824 ms ke 104 ms). Halaman loncat saat dimuat (S0) diselesaikan dengan reservasi ruang banner sejak awal (CLS turun dari 0,473 ke 0,003). Masalah ketikan telat dan hang di pencarian (S1) diperbaiki lewat debounce 250 ms, memoize NumberFormat, dan DocumentFragment, memangkas INP dari 592 ms ke 64 ms (turun 89,2%) serta menghilangkan seluruh long task saat mengetik. Pemuatan 3000 gambar yang membanjiri antrean jaringan (S0) diselesaikan lewat loading lazy bawaan, memangkas permintaan awal dari 3000 menjadi 6–8 gambar saja (turun 99,8%). Frame lambat saat idle (S6) berkurang dari 271 ke 163 frame lewat CSS transform pada compositor.
 
 ## 2. Lingkungan pengukuran
 - Laptop: Intel Core i5-13450HX, RAM 16 GB, Windows 11
@@ -106,5 +105,5 @@ AI digunakan sebagai asisten coding untuk membantu pembacaan data trace DevTools
 
 ### Pembagian kerja
 - Ihsan: TK-1057 (P-02), TK-1070 (P-04), TK-1078 (P-05) dengan tes S0, S4, dan S6
-- Anggota 2: TK-1041 (P-01), TK-1081 (P-06), pengecekan dugaan Rudi no. 1 dan 3 (P-08)
+- Fariz Dhifa Fakhriza: TK-1041 (P-01), TK-1081 (P-06), pengecekan dugaan Rudi no. 1 dan 3 (P-08)
 - Anggota 3: TK-1063 (P-03), TK-1044 dan TK-1052 (P-07)
