@@ -106,4 +106,4 @@ AI digunakan sebagai asisten coding untuk membantu pembacaan data trace DevTools
 ### Pembagian kerja
 - Ihsan: TK-1057 (P-02), TK-1070 (P-04), TK-1078 (P-05) dengan tes S0, S4, dan S6
 - Fariz Dhifa Fakhriza (241524040): TK-1041 (P-01), TK-1081 (P-06), pengecekan dugaan Rudi no. 1 dan 3 (P-08)
-- Anggota 3: TK-1063 (P-03), TK-1044 dan TK-1052 (P-07)
+- Lukman Ahmad (241524050): TK-1063 (P-03), TK-1044 dan TK-1052 (P-07)
