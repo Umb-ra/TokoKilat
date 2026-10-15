@@ -331,3 +331,26 @@ Tanggal dan hash commit entri ini: 2026-10-13
   1. *Kenapa tidak menggunakan custom `IntersectionObserver` manual?* Fitur bawaan platform web `loading="lazy"` sudah didukung secara native oleh seluruh browser modern (Chrome, Edge, Safari, Firefox), dioptimalkan pada tingkat C++/engine browser, dan tidak memerlukan penambahan baris kode observer yang kompleks atau membebani event loop JavaScript.
   2. *Kenapa tidak meminta backend mempercepat respons gambar?* Mengubah server dilarang oleh aturan tugas (Aturan 1: berkas server.js tidak boleh diubah), dan masalah sebenarnya bukan kecepatan server melainkan pemborosan arsitektur frontend yang meminta 3.000 gambar sekaligus.
 
+### Sesudah perbaikan
+
+- Hash commit perbaikan: c5b6323
+
+- Hasil ukur (S0, Network panel & Performance):
+
+  Sebelum -> Sesudah:
+  - Jumlah permintaan gambar dalam 10 detik pertama: 3.000 gambar -> 6 gambar (turun 99,8%, target tugas sebanding dengan kartu di layar tercapai sempurna)
+  - CLS: 0,003 -> 0,002 (tetap stabil dan sangat aman di bawah batas 0,1)
+
+  Dari pengamatan Network & Runtime:
+  - Browser secara native hanya mengunduh 6 gambar SVG untuk kartu-kartu yang langsung terlihat di viewport layar 412x915 saat pertama kali dimuat.
+  - Sisa 2.994 gambar produk tidak pernah diminta ke server kecuali pengguna menggulir mendekati kartu tersebut.
+  - Kemacetan antrean jaringan (network bottleneck) sepenuhnya hilang. Gambar produk di layar langsung tampil tanpa kotak abu-abu berkepanjangan.
+  - Kuota data pengguna terhemat lebih dari 99% saat membuka halaman flash sale.
+
+- Prediksi vs kenyataan: sangat tepat.
+  Dugaan bahwa 3.000 gambar langsung diminta sekaligus karena ketiadaan `loading="lazy"` terbukti 100% benar. Penerapan `loading="lazy"` bawaan platform web dan `decoding="async"` memangkas permintaan dari 3.000 menjadi 6 gambar saja. Dugaan Rudi #2 ("server backend lemot") terbantahkan secara telak: backend merespons dengan cepat ketika tidak dibombardir 3.000 permintaan sekaligus.
+
+- Efek samping:
+  1. Jika pengguna menggulir halaman dengan kecepatan sangat ekstrem, kotak abu-abu mungkin muncul sepersekian detik sebelum gambar selesai dimuat oleh browser. Namun ini jauh lebih baik dibanding seluruh halaman hang menunggu antrean 3.000 gambar.
+  2. Dimensi wadah kartu tetap stabil (tidak ada layout shift) karena atribut `width="480"` dan `height="480"` serta rasio aspek CSS tetap dipertahankan.
+

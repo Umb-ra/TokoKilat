@@ -19,7 +19,7 @@ Masalah terbesar yang sudah ditangani adalah layar yang ngefreeze sekitar 1,8 de
 | Skenario | Metrik | Sebelum (median) | Sesudah (median) | Target | Tercapai? |
 |---|---|---|---|---|---|
 | S0 | CLS | 0,473 | 0,003 | <= 0,1 | Ya |
-| S0 | Jumlah permintaan gambar dalam 10 dtk pertama | 3000 | | sebanding dengan yang terlihat | |
+| S0 | Jumlah permintaan gambar dalam 10 dtk pertama | 3000 | 6 | sebanding dengan yang terlihat | Ya |
 | S1 | INP | 592 ms | 64 ms | <= 200 ms | Ya |
 | S1 | Long task terlama | 471 ms | 349 ms | <= 100 ms | Belum |
 | S2 | INP | | | <= 200 ms | |
@@ -28,6 +28,7 @@ Masalah terbesar yang sudah ditangani adalah layar yang ngefreeze sekitar 1,8 de
 | S5 | Frame > 50 ms per 10 dtk | | | <= 2 | |
 | S6 | Frame > 50 ms per 10 dtk | 271 | 163 | <= 2 | Belum |
 
+Pendukung S0: permintaan gambar dalam 10 detik pertama turun dari 3000 menjadi 6 (turun 99,8%), antrean jaringan bersih dan gambar di viewport tampil instan.
 Pendukung S1: INP turun dari 592 ms menjadi 64 ms (turun 89,2%), pengetikan responsif instan. Long task terlama turun dari 471 ms ke 349 ms.
 Pendukung S4: long task terlama 1808 ms menjadi 632 ms, total blokir 8678 ms menjadi 1098 ms, jumlah long task 125 menjadi 25.
 
