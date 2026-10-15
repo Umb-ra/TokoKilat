@@ -290,3 +290,44 @@ Tanggal dan hash commit entri ini: 2026-10-13
 - Efek samping:
   1. Hasil penyaringan produk muncul 250 ms setelah pengguna berhenti mengetik. Waktu tunggu ini tidak terasa lambat dan jauh lebih nyaman dibandingkan browser yang membeku.
   2. Seluruh 3.000 produk tetap dapat dicari dengan akurat dan jumlah hasil pencarian tetap tepat.
+
+---
+
+## P-06: Gambar Produk Lama Muncul dan Kuota Boros
+
+**Tiket terkait:** TK-1081 (Pak Hendra)  
+**Tanggal dan hash commit entri ini:** 2026-10-15  
+
+### Sebelum perbaikan
+
+- **Yang teramati di trace (baseline):**
+  Pada skenario S0 (muat halaman dan diam 10 detik pertama), panel Network menunjukkan browser langsung mengirimkan **3.000 permintaan gambar** secara bersamaan saat halaman dimuat.
+  
+  Dari tabel baseline di `LAPORAN.md`:
+  - Jumlah permintaan gambar dalam 10 detik pertama: **3.000 gambar** (seluruh kartu langsung mengunduh gambar).
+  - Target tugas: sebanding dengan jumlah kartu yang terlihat di layar (sekitar 8-16 kartu).
+
+- **Dugaan mekanisme:**
+  Di `public/js/katalog.js:27-32`, elemen gambar dibuat dan langsung disetel `gambar.src = produk.gambar` untuk seluruh 3.000 kartu tanpa atribut `loading="lazy"` atau mekanisme penundaan muat:
+  1. Browser berusaha mengunduh 3.000 file gambar SVG/raster sekaligus.
+  2. Karena browser membatasi koneksi paralel HTTP ke domain yang sama (sekitar 6 koneksi simultan), ribuan gambar tersebut menumpuk di antrean antarmuka jaringan (network queue).
+  3. Server sengaja memberikan jeda 60-300 ms per gambar dan header `Cache-Control: no-store`. Akibat antrean yang sangat panjang, gambar yang berada di layar (viewport) harus mengantre di belakang gambar-gambar lain yang letaknya jauh di bawah. Inilah yang menyebabkan Pak Hendra melihat kotak abu-abu dalam waktu lama saat membuka halaman.
+  4. Dugaan Rudi #2 bahwa "server backend lemot" adalah keliru. Waktu respons server per gambar wajar (60-300 ms), namun jumlah permintaannya yang tidak masuk akal (3.000 gambar sekaligus).
+  5. Seluruh kuota data pelanggan terkuras karena mengunduh ribuan gambar yang bahkan belum pernah digulir atau dilihat.
+
+- **Rencana perubahan:**
+  1. Tambahkan atribut `loading="lazy"` pada elemen `<img>` di `public/js/katalog.js:27-32`. Dengan `loading="lazy"`, browser secara otomatis menunda pemuatan gambar hingga kartu berada dalam jarak pandang layar (*near viewport*).
+  2. Tambahkan atribut `decoding="async"` agar proses decoding gambar dilakukan di background thread tanpa memblokir rendering main thread.
+  3. Pastikan atribut `width` dan `height` (480x480) serta `aspect-ratio` tetap ada agar tata letak (CLS) tidak terganggu saat gambar selesai dimuat.
+
+- **Prediksi terukur:**
+  Setelah perbaikan:
+  1. Jumlah permintaan gambar dalam 10 detik pertama turun drastis dari **3.000 permintaan** menjadi **sebanding dengan kartu di viewport** (sekitar 10-24 gambar, turun >99%).
+  2. Gambar di area layar muncul seketika tanpa tertahan antrean ribuan gambar lain.
+  3. Kuota pengguna hemat drastis dan kemacetan antrean jaringan hilang.
+  4. CLS tetap stabil dan aman (<= 0,1).
+
+- **Alternatif yang dipertimbangkan dan alasan tidak dipilih:**
+  1. *Kenapa tidak menggunakan custom `IntersectionObserver` manual?* Fitur bawaan platform web `loading="lazy"` sudah didukung secara native oleh seluruh browser modern (Chrome, Edge, Safari, Firefox), dioptimalkan pada tingkat C++/engine browser, dan tidak memerlukan penambahan baris kode observer yang kompleks atau membebani event loop JavaScript.
+  2. *Kenapa tidak meminta backend mempercepat respons gambar?* Mengubah server dilarang oleh aturan tugas (Aturan 1: berkas server.js tidak boleh diubah), dan masalah sebenarnya bukan kecepatan server melainkan pemborosan arsitektur frontend yang meminta 3.000 gambar sekaligus.
+
