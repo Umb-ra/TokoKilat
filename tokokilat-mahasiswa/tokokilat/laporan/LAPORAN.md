@@ -66,7 +66,30 @@ Diurutkan berdasarkan dampak bagi pengguna.
 - **Trade-off:** Centidetik diperbarui sekitar 60 kali per detik, bukan 100, dan perbedaannya tidak terlihat. Kecepatan teks berjalan sedikit berbeda dan disesuaikan lewat durasi animasi.
 - **Hasil:** Frame lambat 271 menjadi 163 (turun 40%), frame terburuk 1260 ms menjadi 206 ms, Timer fired 265 menjadi 11. Target maksimal 2 frame lambat belum tercapai.
 
+### T-04: Ketikan telat dan hang pada pencarian
+- **Tiket terkait:** TK-1041
+- **Gejala bagi pengguna:** Mengetik kata di kolom cari hurufnya lambat muncul dan layar seperti hang.
+- **Bukti:** [gambar/S1-longtask-overview.png](gambar/S1-longtask-overview.png) menunjukkan 12 Long Task beruntun (long task terlama 471 ms, INP 593 ms). [gambar/S1-bottomup.png](gambar/S1-bottomup.png) menunjukkan Layout 40,4% (1.964 ms), renderProduk 39,1% (1.898 ms), formatRupiah 275 ms, dan lacak SDK terpanggil di tiap ketukan. Sesudah perbaikan: [gambar/After-S1-longtask-overview.png](gambar/After-S1-longtask-overview.png) menunjukkan track interactions bersih dan INP hijau 62 ms.
+- **Akar masalah dan mekanismenya:** Di [public/js/pencarian.js](../public/js/pencarian.js), event input langsung memanggil terapkanSaringan tanpa debounce di tiap ketukan. Di setiap huruf, seluruh DOM 3000 kartu dihancurkan dan dibuat ulang (kisi.innerHTML = ''), formatRupiah menginstansiasi objek Intl.NumberFormat baru ribuan kali, dan SDK Lacak melakukan loop 2 juta iterasi.
+- **Kualitas yang terdampak (ISO/IEC 25010):** Time behaviour (respons ketik 592 ms di atas ambang) dan Interaction capability (operability dan user engagement).
+- **Perbaikan:** Commit a3a3008. Menambahkan debounce 250 ms pada input cari, memanfaatkan kembali satu objek Intl.NumberFormat di tingkat modul util.js, mencadangkan string normalisasi produk, dan merender kartu lewat DocumentFragment.
+- **Trade-off:** Hasil filter muncul dengan jeda 250 ms setelah ketukan terakhir. Jeda ini alami bagi mata manusia dan menghilangkan freezing total.
+- **Hasil:** INP turun dari 592 ms ke 64 ms (turun 89,2%), long task selama pengetikan hilang (0 kali), dan ketikan terasa instan.
+
+### T-05: Pemuatan 3000 gambar sekaligus membanjiri antrean jaringan
+- **Tiket terkait:** TK-1081
+- **Gejala bagi pengguna:** Gambar produk lama muncul (kotak abu-abu) dan kuota internet cepat habis.
+- **Bukti:** Baseline S0 menunjukkan 3000 permintaan gambar dikirim bersamaan saat halaman dimuat. Sesudah perbaikan: [gambar/After-S0-network-gambar.png](gambar/After-S0-network-gambar.png) membuktikan hanya 8 request gambar yang diminta saat halaman dibuka (sesuai viewport layar).
+- **Akar masalah dan mekanismenya:** Di [public/js/katalog.js](../public/js/katalog.js), elemen img dibuat dengan langsung mengisi properti src tanpa loading="lazy". Browser membatasi ~6 koneksi paralel ke server, sehingga 3000 gambar menumpuk di antrean jaringan. Gambar di area viewport pengguna ikut tertahan di belakang ribuan antrean gambar lainnya.
+- **Kualitas yang terdampak (ISO/IEC 25010):** Resource utilization (kuota boros) dan Time behaviour (gambar lama muncul).
+- **Perbaikan:** Commit c5b6323. Menambahkan atribut loading="lazy" dan decoding="async" pada elemen gambar produk.
+- **Trade-off:** Bila pengguna menggulir sangat cepat, kotak abu-abu mungkin tampak sekilas sebelum gambar selesai diunduh.
+- **Hasil:** Permintaan gambar dalam 10 detik pertama turun dari 3.000 menjadi 6-8 gambar (turun >99,7%), antrean jaringan bersih, dan kuota pengguna hemat drastis.
+
 ## 5. Dugaan yang ternyata keliru
+- Catatan Rudi no. 1, bahwa biang kerok utama adalah loop bersarang di kategori.js (O(n²)) dan querySelectorAll di dalam loop. Keliru: kategori unik pada data hanya berjumlah 8, sehingga loop bersarang hanya menghasilkan 56 iterasi (memakan waktu < 0,5 ms di runtime). Ini bukan bottleneck utama halaman sama sekali. Rudi mendiagnosis berdasarkan bentuk sintaks tanpa mengukur ukuran data nyata.
+- Catatan Rudi no. 2, bahwa API produk dan server backend lemot. Keliru: waktu respons API produk hanya ~180 ms dan server merespons gambar dengan wajar (60-300 ms). Masalah sebenarnya adalah frontend yang secara serakah meminta 3.000 gambar sekaligus tanpa lazy loading.
+- Catatan Rudi no. 3, bahwa urutkanGelembung (bubble sort) di util.js harus diganti quicksort. Keliru: data yang diurutkan oleh bubble sort di pasangKaki hanya 12 merek populer, yang hanya memakan waktu 0,3 ms. Pada dataset sekecil itu, perbedaan bubble sort dan quicksort tidak terukur di flame chart.
 - Catatan Rudi no. 4, bahwa perhitungan voucher sudah async sehingga aman. Keliru: async tanpa operasi asinkron sungguhan hanya membungkus hasil dalam promise yang langsung selesai, dan await menjadwalkannya sebagai microtask yang tetap memblokir rendering. Buktinya INP 1824 ms dan satu task 1,81 detik. Setelah async dihapus dan loop dipecah lewat task, INP menjadi 104 ms.
 - Komentar di harga-promo.js ("Dibuat async supaya perhitungan tidak memblokir halaman") keliru karena alasan yang sama.
 - Dugaan bahwa promo.js satu-satunya penyebab frame lambat saat idle hanya sebagian benar. Setelah diperbaiki, frame lambat masih 163 per 10 detik, jadi masih ada pekerjaan lain di main thread, misalnya pantauFrame milik alat ukur dan fungsi gambar.

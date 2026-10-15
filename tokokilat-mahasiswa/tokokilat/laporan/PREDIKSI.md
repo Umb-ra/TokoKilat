@@ -354,3 +354,33 @@ Tanggal dan hash commit entri ini: 2026-10-13
   1. Jika pengguna menggulir halaman dengan kecepatan sangat ekstrem, kotak abu-abu mungkin muncul sepersekian detik sebelum gambar selesai dimuat oleh browser. Namun ini jauh lebih baik dibanding seluruh halaman hang menunggu antrean 3.000 gambar.
   2. Dimensi wadah kartu tetap stabil (tidak ada layout shift) karena atribut `width="480"` dan `height="480"` serta rasio aspek CSS tetap dipertahankan.
 
+---
+
+## P-08: Verifikasi Dugaan Rudi #1 dan #3
+
+**Tiket terkait:** Catatan serah terima Rudi no. 1 dan 3  
+**Tanggal dan hash commit entri ini:** 2026-10-15  
+
+### Temuan dan Evaluasi
+
+- **Dugaan Rudi #1:** "Biang kerok utamanya hampir pasti loop bersarang di `kategori.js`. Itu O(n²) dan ada `querySelectorAll` di dalam loop. Saya sudah tandai dengan TODO. Kerjakan itu dulu."
+- **Dugaan Rudi #3:** "`urutkanGelembung` di `util.js` itu bubble sort. Ganti dengan quicksort biar kencang."
+
+- **Evaluasi berdasarkan kode dan pengukuran runtime:**
+  1. **Loop bersarang di `kategori.js`:**
+     - Data kategori unik `[...new Set(semuaProduk.map(p => p.kategori))]` ternyata **hanya berjumlah 8 kategori**, bukan 3.000.
+     - Perulangan bersarang `8 × 7` hanya mengeksekusi **56 iterasi**.
+     - `querySelectorAll('#kategori-terkait li')` hanya mencari elemen `li` di dalam kontainer yang maksimal memiliki 8 elemen.
+     - Di runtime, seluruh komputasi loop kategori ini hanya memakan waktu **~0,46 ms** (kurang dari 0,5 milidetik).
+  2. **Bubble sort di `util.js`:**
+     - `urutkanGelembung` hanya digunakan di `pasangKaki` untuk mengurutkan `merek`.
+     - Jumlah merek unik pada data produk **hanya 12 merek**.
+     - Bubble sort atas 12 elemen hanya melakukan maksimal 66 perbandingan, dengan durasi runtime **~0,33 ms**.
+     - Pengurutan 3.000 produk utama di katalog sebenarnya sudah memakai `Array.prototype.sort` bawaan engine JavaScript V8 (`pencarian.js:37`), bukan bubble sort.
+
+- **Kesimpulan:**
+  Kedua dugaan Rudi **salah sasaran / salah prioritas**. Bentuk kodenya secara akademis memang terlihat tidak efisien (O(n²) dan bubble sort), namun ukuran datanya sangat kecil (8 kategori dan 12 merek) sehingga dampaknya di main thread mendekati 0 ms. 
+  
+  Mengejar optimasi di `kategori.js` atau mengganti bubble sort dengan quicksort adalah bentuk *premature optimization* yang tidak menghasilkan perbaikan terukur apa pun bagi keluhan pengguna (seperti freeze 1,8 detik di voucher atau ketikan telat 592 ms di pencarian).
+
+
