@@ -542,3 +542,55 @@ Tanggal dan hash commit entri ini: 2026-10-13
 - Efek samping: semua fitur tetap jalan (kartu muncul dengan animasi, lencana berdenyut saat terlihat, bar progres, bayangan header, tombol "Ke atas", impresi terkirim, pencarian tetap menampilkan jumlah yang benar). Tidak terlihat panjang scrollbar berubah-ubah saat digulir.
 
 - Kesimpulan P-03: dibanding baseline, scroll jelas lebih ringan. Long task terlama turun dari 405 ms ke sekitar 120 ms, frame terburuk dari 727 ms ke 152 ms, Layout turun 49%, dan Pre-paint turun 77%. Tapi ada dua beban yang naik dibanding baseline, yaitu IntersectionObserver (789 -> 3.681 ms) dan Commit (860 -> 2.050 ms), dan target frame lambat belum tercapai. Perbaikan tidak saya lanjutkan ke putaran 3 karena keterbatasan waktu. Langkah yang paling masuk akal berikutnya adalah mengukur ulang tanpa content-visibility untuk memastikan dugaan nomor 1, dan memindahkan bar progres serta bayangan header ke scroll-driven animation di CSS supaya listener scroll tidak membaca posisi sama sekali.
+
+---
+
+## P-07: Tombol keranjang tidak bereaksi dan pesanan ganda
+
+**Tiket terkait:** TK-1044, TK-1052
+**Tanggal dan hash commit entri ini:** 2026-10-16
+
+### Sebelum perbaikan
+
+- **Yang teramati di trace (baseline):**
+  Baseline S2 dan S3 direkam sebelum perbaikan P-03, dengan CPU 4x dan preset iPhone 16 (393×852), masing-masing 3 kali.
+
+  S2 (tekan "+ Keranjang" satu kali): INP dari alat ukur 264 / 272 / 256 ms, median 264 ms (target paling lama 200 ms). Di panel INP breakdown ([S2-inp-breakdown.png](gambar/S2-inp-breakdown.png)) rinciannya input delay 35 ms, processing 139 ms, dan presentation delay 101 ms, jadi bagian terbesar adalah processing, yaitu waktu menjalankan handler click itu sendiri. Di flame chart terlihat susunannya: Event: click -> tambahKeKeranjang -> k (Lacak.kirim) -> f dan t, lalu si...t (simpanRiwayat). Di Bottom-Up ([S2-bottomup.png](gambar/S2-bottomup.png)), fungsi t dari lacak.min.js memakan 55,9 ms dan f 18,8 ms. Tulisan "Ditambahkan ✓" baru tergambar setelah seluruh blok ini selesai.
+
+  S3 (tekan "Beli sekarang" tiga kali cepat): INP 312 / 280 / 280 ms, median 280 ms. Rincian rekaman pertama: input delay 125 ms, processing 123 ms, presentation 64 ms. Di track Network ([S3-overview-network.png](gambar/S3-overview-network.png) dan [S3-network-3-post.png](gambar/S3-network-3-post.png)) ada tiga permintaan POST /api/pesanan, semuanya dari keranjang.js:103, status 201, masing-masing sekitar 360 ms. Lencana "Pesanan" berubah menjadi 3, dan log server ([S3-terminal-pesanan.png](gambar/S3-terminal-pesanan.png)) mencatat TK-00001 sampai TK-00003 untuk produk yang sama. Pola ini sama di ketiga rekaman. Di Bottom-Up, fungsi t dari lacak.min.js muncul lagi dengan 160-200 ms per rekaman (tiga klik).
+
+- **Dugaan mekanisme:**
+  Untuk "+ Keranjang" (keranjang.js baris 68-94), semua pekerjaan berat dijalankan dalam satu task di handler click, dan pembaruan tampilan diletakkan paling akhir (ada komentar "Data sudah aman tersimpan, baru tampilan diperbarui"). Urutannya: JSON.parse riwayat berisi sekitar 9000 entri dari localStorage, lalu Lacak.kirim('add_to_cart') dengan payload berisi seluruh riwayat, lalu JSON.stringify riwayat dan menulisnya lagi ke localStorage. Payload add_to_cart berisi riwayat lengkap ukurannya sekitar 1,2 MB setelah dijadikan JSON, dan fungsi t() di SDK menghitung hash atas string itu 12 kali, jadi sekitar 15 juta putaran. Ditambah fungsi f() yang selalu berputar 2 juta kali. Selama task ini berjalan, browser tidak punya kesempatan menggambar frame, jadi pengguna tidak melihat reaksi apa pun. Ini menjelaskan kenapa Pak Anton memencet berulang-ulang. Setiap klik tambahan masuk ke antrean task dan dijalankan setelah task sebelumnya selesai, sehingga isi keranjang bertambah sesuai jumlah klik.
+
+  Untuk "Beli sekarang" (keranjang.js baris 96-114), ada dua masalah yang berbeda. Pertama, masalah logika: tidak ada penjaga sama sekali, jadi setiap klik langsung mengirim POST /api/pesanan baru. Selama menunggu jawaban server (sekitar 350 ms) tombol tetap bisa ditekan dan tidak berubah tampilannya. Kedua, masalah performa yang memperparah: sebelum fetch ada kerja berat yang sama (parse riwayat, Lacak.kirim('begin_checkout') dengan riwayat lengkap, simpan riwayat), sehingga jeda tanpa umpan balik jadi lebih panjang. Mempercepat kode saja tidak akan menyelesaikan pesanan ganda, karena klik kedua tetap bisa masuk selama 350 ms menunggu server.
+
+- **Rencana perubahan:**
+  1. Umpan balik dulu, kerja berat belakangan. Di baris pertama handler, tombol langsung diubah ("Ditambahkan ✓" atau "Memproses…") dan lencana keranjang langsung diperbarui. Setelah itu browser diberi kesempatan menggambar dengan menunggu requestAnimationFrame lalu setTimeout 0, baru kemudian SDK dan localStorage dikerjakan. Dari P-02 sudah terbukti bahwa await biasa (microtask) tidak memberi kesempatan menggambar, jadi harus task baru.
+  2. Payload SDK dikecilkan. Riwayat yang dikirim ke SDK hanya 20 entri terakhir ditambah jumlah total entri, bukan sekitar 9000 entri. Ukuran payload turun dari sekitar 1,2 MB ke sekitar 3 KB. Event add_to_cart dan begin_checkout tetap terkirim dengan konteks yang masih masuk akal untuk tim data. Riwayat lengkap tetap disimpan di localStorage seperti sebelumnya.
+  3. Penjaga "Beli sekarang". Di baris pertama handler (sebelum await apa pun) tombol diberi disabled, aria-busy, dan teks "Memproses…". Ditambah penanda per produk supaya klik yang sudah terlanjur masuk antrean juga ditolak. Tombol diaktifkan lagi di blok finally setelah server menjawab. Kalau fetch gagal, muncul toast error dan tombol bisa ditekan lagi.
+  4. "+ Keranjang" tidak dinonaktifkan, karena menambah barang yang sama dua kali memang sah. Cukup umpan baliknya yang langsung terlihat.
+
+- **Prediksi terukur:**
+  - S2: INP turun dari median 264 ms menjadi di bawah 100 ms, karena processing tinggal mengubah teks tombol dan lencana. Fungsi t dari SDK turun dari sekitar 56 ms menjadi di bawah 1 ms karena payload sekitar 400 kali lebih kecil. Fungsi f tetap sekitar 19 ms karena tidak bergantung pada payload, tapi sekarang berjalan di task terpisah setelah frame tergambar, jadi tidak dihitung ke INP.
+  - S3: jumlah pesanan dari tiga klik cepat turun dari 3 menjadi tepat 1, dan di track Network hanya ada satu POST /api/pesanan. INP turun dari median 280 ms menjadi di bawah 150 ms. Pengguna langsung melihat tulisan "Memproses…" dan tombol yang tidak bisa ditekan.
+  - Long task di atas 100 ms selama interaksi S2 dan S3 tidak ada lagi, kecuali yang berasal dari masalah scroll di P-03.
+
+  Catatan: baseline S2 dan S3 direkam sebelum perbaikan P-03. Perbaikan P-03 juga mengurangi kerja Layout saat halaman diam (misalnya animasi lencana kilat di luar layar sudah berhenti), jadi sebagian penurunan presentation delay mungkin berasal dari P-03, bukan dari P-07. Di bagian sesudah, saya akan memisahkan ini dengan melihat processing time dan durasi fungsi t dan f, yang hanya dipengaruhi oleh P-07.
+
+  Prediksi efek samping:
+  1. Pengguna yang memang ingin membeli dua kali harus menunggu proses pertama selesai (sekitar 0,5 detik).
+  2. Ada jeda singkat di mana tampilan sudah berubah tetapi riwayat belum tersimpan ke localStorage. Kalau tab ditutup tepat pada saat itu, satu entri riwayat bisa hilang.
+  3. Tim data menerima riwayat yang lebih pendek di setiap event. Ini harus disampaikan ke tim data, karena komentar di kode menyebut mereka meminta konteks selengkap mungkin.
+
+- **Alternatif yang dipertimbangkan dan alasan tidak dipilih:**
+  1. Debounce klik pada "Beli sekarang". Malah menambah jeda sebelum ada reaksi (INP makin buruk), dan klik setelah jeda debounce selesai tetap bisa membuat pesanan kedua.
+  2. Hanya mempercepat kode tanpa penjaga. Tidak cukup, karena jeda menunggu server 350 ms berasal dari server (yang tidak boleh diubah), dan selama itu klik tetap lolos.
+  3. Idempotency key di server (setiap pesanan membawa kunci unik, server menolak kunci yang sama). Ini cara paling kuat, terutama untuk kasus jaringan putus lalu mengulang, tetapi server.js tidak boleh diubah. Disimpan sebagai rekomendasi untuk tim backend.
+  4. Memindahkan pemanggilan SDK ke Web Worker. SDK memakai window dan document, jadi tidak bisa dijalankan di worker tanpa mengubah berkas SDK, dan itu dilarang.
+
+### Sesudah perbaikan
+
+- Hash commit perbaikan:
+- Hasil ukur (median 3 kali):
+- Prediksi vs kenyataan:
+- Efek samping:
