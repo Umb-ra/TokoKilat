@@ -265,3 +265,28 @@ Tanggal dan hash commit entri ini: 2026-10-13
 - **Alternatif yang dipertimbangkan dan alasan tidak dipilih:**
   1. *Kenapa tidak virtual scroll penuh sekarang?* Virtual scrolling / infinite scroll lebih kompleks dan berisiko melanggar aturan tugas ("seluruh 3000 produk harus tetap bisa ditemukan lewat pencarian dan dijangkau dengan menggulir, serta jumlah hasil benar"). Debouncing dan memoize formatter adalah perbaikan yang sangat tepat sasaran untuk akar masalah ketikan telat (TK-1041) tanpa risiko merusak aksesibilitas produk.
   2. *Kenapa tidak langsung Web Worker untuk filter?* Operasi pencarian `filter` teks di JS sebenarnya hanya memakan waktu beberapa milidetik. Biang kerok sebenarnya adalah penghancuran & pembuatan ulang ribuan DOM kartu serta instansiasi formatter, yang keduanya harus terjadi di main thread.
+
+### Sesudah perbaikan
+
+- Hash commit perbaikan: a3a3008
+
+- Hasil ukur (S1, tanpa CPU throttling):
+
+  Sebelum -> Sesudah:
+  - INP: 592 ms -> 64 ms (turun 89,2%, target tugas <= 200 ms tercapai)
+  - longTaskTerlama: 471 ms -> 349 ms (turun 25,9%)
+  - Long task selama pengetikan huruf: 12 kali -> 0 kali (selama mengetik huruf, browser sepenuhnya responsif dan tidak ada long task sama sekali)
+
+  Dari trace (`After-S1-Trace1.json`):
+  - Saat pengguna mengetik `sepatu`, event input dan keydown/keyup selesai dalam waktu sangat singkat (< 1 ms) tanpa memblokir rendering. Huruf langsung muncul di layar tanpa jeda.
+  - Setelah pengguna selesai mengetik dan berhenti selama 250 ms, fungsi `terapkanSaringan()` dijalankan hanya 1 kali, bukan berulang kali di tiap huruf.
+  - Pembuatan formatter `Intl.NumberFormat` pada `formatRupiah` tidak lagi berulang ribuan kali karena memakai kembali satu objek di tingkat modul.
+  - Event SDK `Lacak.kirim('search')` dikirim 1 kali untuk kata akhir setelah stabil, bukan 12 kali.
+  - Penambahan kartu produk ke kisi menggunakan `DocumentFragment` sehingga proses append ke DOM tree berjalan efisien.
+
+- Prediksi vs kenyataan: sangat tepat.
+  Dugaan bahwa ketiadaan debounce dan penghancuran/pembuatan ulang DOM di setiap keystroke adalah akar masalah ketikan telat (TK-1041) terbukti benar. Dengan debounce 250 ms, INP anjlok drastis dari 592 ms ke 64 ms (turun 89,2%, target <= 200 ms tercapai). Layar tidak lagi freeze saat mengetik kata kunci pencarian.
+
+- Efek samping:
+  1. Hasil penyaringan produk muncul 250 ms setelah pengguna berhenti mengetik. Waktu tunggu ini tidak terasa lambat dan jauh lebih nyaman dibandingkan browser yang membeku.
+  2. Seluruh 3.000 produk tetap dapat dicari dengan akurat dan jumlah hasil pencarian tetap tepat.
