@@ -1,0 +1,20 @@
+Repositori GitHub - Tim HebatKenapa
+Tugas: Operasi Penyelamatan Flash Sale 12.12 (TokoKilat)
+
+Repositori : https://github.com/Umb-ra/TokoKilat
+Branch     : main
+Folder     : tokokilat-mahasiswa/tokokilat
+
+Berkas laporan:
+- Laporan  : https://github.com/Umb-ra/TokoKilat/blob/main/tokokilat-mahasiswa/tokokilat/laporan/LAPORAN.md
+- Prediksi : https://github.com/Umb-ra/TokoKilat/blob/main/tokokilat-mahasiswa/tokokilat/laporan/PREDIKSI.md
+- Audit AI : https://github.com/Umb-ra/TokoKilat/blob/main/tokokilat-mahasiswa/tokokilat/laporan/AUDIT-AI.md
+- Trace    : https://github.com/Umb-ra/TokoKilat/tree/main/tokokilat-mahasiswa/tokokilat/laporan/trace
+- Gambar   : https://github.com/Umb-ra/TokoKilat/tree/main/tokokilat-mahasiswa/tokokilat/laporan/gambar
+
+Riwayat commit: https://github.com/Umb-ra/TokoKilat/commits/main
+
+Anggota:
+- Ihsan Fauzi (241524048)
+- Fariz Dhifa Fakhriza (241524040)
+- Lukman Ahmad (241524050)

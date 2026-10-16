@@ -135,3 +135,16 @@ AI digunakan sebagai asisten coding untuk membantu pembacaan data trace DevTools
 - Ihsan: TK-1057 (P-02), TK-1070 (P-04), TK-1078 (P-05) dengan tes S0, S4, dan S6
 - Fariz Dhifa Fakhriza (241524040): TK-1041 (P-01), TK-1081 (P-06), pengecekan dugaan Rudi no. 1 dan 3 (P-08)
 - Lukman Ahmad (241524050): TK-1063 (P-03), TK-1044 dan TK-1052 (P-07)
+
+### Pernyataan penggunaan AI bagian S2, S3, dan S5 (Lukman Ahmad)
+Alat yang digunakan: Claude Code (model Claude Opus).
+
+Claude Code dipakai untuk membantu:
+- menyusun rencana kerja dan langkah perekaman baseline S2, S3, dan S5;
+- membaca dan menjumlahkan angka dari berkas trace (Layout, Commit, IntersectionObserver, waktu klik, jumlah POST);
+- menyusun draf hipotesis P-03 dan P-07 di PREDIKSI.md, draf T-06 dan T-07 di LAPORAN.md, serta A-03 dan A-04 di AUDIT-AI.md;
+- menulis kode perbaikan di gulir.js, katalog.js, keranjang.js, dan toko.css, lalu mengujinya secara otomatis di headless Chrome.
+
+Yang dikerjakan sendiri: seluruh perekaman trace di panel Performance (CPU 4x, iPhone 16), pengambilan angka alat ukur dan tangkapan layar, pemeriksaan hasil setiap putaran, serta keputusan untuk melanjutkan ke putaran kedua pada P-03 dan P-07.
+
+Dua usulan Claude Code terbukti bermasalah lewat trace dan dicatat sebagai A-03 dan A-04 di AUDIT-AI.md: perbaikan scroll putaran 1 yang menaikkan Commit dan IntersectionObserver, serta penjaga pesanan ganda yang hanya lolos uji klik otomatis. Kedua hasil tersebut diperbaiki di putaran berikutnya setelah dibandingkan dengan rekaman manual.
