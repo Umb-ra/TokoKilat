@@ -11,6 +11,7 @@ Berkas laporan:
 - Audit AI : https://github.com/Umb-ra/TokoKilat/blob/main/tokokilat-mahasiswa/tokokilat/laporan/AUDIT-AI.md
 - Trace    : https://github.com/Umb-ra/TokoKilat/tree/main/tokokilat-mahasiswa/tokokilat/laporan/trace
 - Gambar   : https://github.com/Umb-ra/TokoKilat/tree/main/tokokilat-mahasiswa/tokokilat/laporan/gambar
+- Video    : https://github.com/Umb-ra/TokoKilat/blob/main/tokokilat-mahasiswa/tokokilat/laporan/video/video-demo.mp4
 
 Riwayat commit: https://github.com/Umb-ra/TokoKilat/commits/main
 
