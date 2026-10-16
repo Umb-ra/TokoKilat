@@ -5,7 +5,7 @@ minimal dua tiket, sebaiknya di branch terpisah. Uji usulannya dengan protokol p
 Temukan minimal **dua** usulan bermasalah. Usulan AI yang bagus juga boleh dicatat, tetapi tidak
 menggantikan dua temuan wajib.
 
-Alat AI yang dipakai: Antigravity, Claude, ChatGPT.  Branch atau commit tempat usulan diterapkan: main  Peninjau: Fariz Dhifa Fakhriza (241524040) untuk A-01 dan A-02, Lukman Ahmad (241524050) untuk A-03 dan A-04
+Alat AI yang dipakai: Antigravity, Claude, ChatGPT.  Branch atau commit tempat usulan diterapkan: main  Peninjau: Fariz Dhifa Fakhriza (241524040) untuk A-01 dan A-02, Lukman Ahmad (241524050) untuk A-03 dan A-04, Ihsan Fauzi (241524048) untuk A-05 dan A-06
 
 ---
 
@@ -135,6 +135,69 @@ Alat AI yang dipakai: Antigravity, Claude, ChatGPT.  Branch atau commit tempat u
   AI menguji dengan pola klik yang tidak realistis. Tiga .click() dalam satu skrip terjadi dalam hitungan milidetik, jauh lebih cepat dari jari manusia di HP yang diperlambat 4x. Akibatnya jendela penjagaan 360 ms terlihat cukup, padahal klik manusia berjarak sekitar 1 detik. AI juga tidak memperhitungkan bahwa tulisan "Dipesan ✓" masih tampil saat tombol sudah aktif, yang justru mengundang pengguna memencet lagi.
 - **Perbaikan yang benar menurut tim:**
   Tombol tetap nonaktif selama tulisan "Dipesan ✓" tampil (commit 737216e). AI awalnya mengusulkan 1,5 detik, tetapi setelah diuji dengan pola klik dari trace (0, 1, 2 detik) masih lolos satu pesanan, sehingga dinaikkan ke 3 detik. Solusi paling kuat tetap idempotency key di server, yang direkomendasikan ke tim backend. Penjaga di klien hanya mengurangi peluang pesanan ganda. Selama server menerima pesanan duplikat tanpa kunci unik, akar masalahnya belum hilang sepenuhnya.
+
+---
+
+## A-05: AI menyarankan Promise dan async/await palsu untuk perhitungan voucher
+
+- **Tiket yang diminta diperbaiki:** TK-1057 (layar freeze saat tombol pakai voucher ditekan)
+- **Prompt yang diberikan (ringkas):** AI diminta memperbaiki hitungHargaPromo di harga-promo.js agar proses hitung voucher pada 3000 produk tidak membekukan antarmuka.
+- **Usulan AI (ringkas, sertakan potongan kode yang relevan):**
+  AI mengusulkan membungkus perhitungan di dalam new Promise dan menandai fungsinya dengan kata kunci async, persis seperti komentar peninggalan Rudi di kode:
+  ```js
+  export async function hitungHargaPromo(produk, voucher) {
+    return new Promise((resolve) => {
+      const hasil = prosesDiskon(produk, voucher);
+      resolve(hasil);
+    });
+  }
+  for (const p of produk) {
+    await hitungHargaPromo(p, voucher);
+    perbaruiProgressBar();
+  }
+  ```
+- **Jenis masalah pada usulan:**
+  - [x] Salah diagnosis (memperbaiki hal yang bukan penyebab)
+  - [x] Tidak lengkap (gejala berkurang tetapi akar masalah masih ada)
+  - [ ] Menimbulkan regresi (metrik lain, fitur, aksesibilitas, atau memori memburuk)
+  - [ ] Melanggar aturan main (menghapus fitur, mengubah berkas terlarang, dan sebagainya)
+  - [x] Memperbaiki sesuatu yang tidak berpengaruh terukur
+- **Bukti:**
+  Trace S4 baseline ([S4-Trace1](trace/S4-Trace1-20261013T163927.json.gz)) membuktikan pola ini tidak mengubah apa-apa. Task tetap berjalan satu blok penuh selama 1,81 detik ([gambar/S4-longtask-overview.png](gambar/S4-longtask-overview.png)) dan INP tetap 1824 ms. Di JavaScript, Promise yang langsung selesai hanya masuk ke antrean microtask. Microtask selalu dihabiskan sampai bersih sebelum browser diizinkan merender tampilan. Karena tidak ada jeda task, progress bar tetap macet di 0% lalu mendadak 100%, dan klik pengguna tetap tidak direspons.
+- **Mengapa AI bisa keliru di sini:**
+  AI mengira kata async dan Promise otomatis membuat kode berjalan di background tanpa mengunci UI. AI tidak membaca perilaku event loop browser, di mana microtask tetap memblokir main thread jika isinya murni komputasi CPU tanpa operasi asinkron sungguhan. AI juga langsung percaya pada komentar Rudi di kode tanpa membuktikannya lewat trace.
+- **Perbaikan yang benar menurut tim:**
+  async palsu dibuang dari hitungHargaPromo, lalu loop 3000 produk dipecah menjadi batch per 100 produk memakai setTimeout(0) (commit 68d63e5). Karena setTimeout adalah macrotask, browser punya kesempatan menggambar progress bar dan memproses klik di jeda antar-batch. INP turun ke 104 ms dan progress bar bergerak bertahap sampai selesai.
+
+---
+
+## A-06: AI mengganti timer dengan requestAnimationFrame tetapi tetap mengubah properti layout di JS
+
+- **Tiket yang diminta diperbaiki:** TK-1070 (banner promo kedap-kedip dan CPU panas saat diam)
+- **Prompt yang diberikan (ringkas):** AI diminta mengoptimasi teks berjalan dan timer promo.js agar tidak membebani CPU saat halaman sedang menganggur.
+- **Usulan AI (ringkas, sertakan potongan kode yang relevan):**
+  AI mengganti setInterval dengan requestAnimationFrame rekursif, tetapi posisi teks tetap digeser lewat style.left setiap frame:
+  ```js
+  let posisiX = 0;
+  function geserTeksPromo() {
+    posisiX -= 1;
+    teksPromo.style.left = posisiX + 'px';
+    requestAnimationFrame(geserTeksPromo);
+  }
+  requestAnimationFrame(geserTeksPromo);
+  ```
+- **Jenis masalah pada usulan:**
+  - [ ] Salah diagnosis (memperbaiki hal yang bukan penyebab)
+  - [x] Tidak lengkap (gejala berkurang tetapi akar masalah masih ada)
+  - [x] Menimbulkan regresi (metrik lain, fitur, aksesibilitas, atau memori memburuk)
+  - [ ] Melanggar aturan main (menghapus fitur, mengubah berkas terlarang, dan sebagainya)
+  - [ ] Memperbaiki sesuatu yang tidak berpengaruh terukur
+- **Bukti:**
+  Trace S6 menunjukkan bahwa mengubah style.left setiap frame tetap memaksa main thread menjalankan Style Recalculation, Layout, dan Paint 60 kali per detik. Saat pengguna diam sekalipun, CPU tidak pernah bisa istirahat, laptop tetap panas, dan frame lambat saat idle masih di atas seratus per 10 detik.
+- **Mengapa AI bisa keliru di sini:**
+  AI terpaku pada saran umum bahwa animasi JavaScript harus memakai requestAnimationFrame, tanpa mengecek properti CSS mana yang digerakkan. Mengubah geometri kotak (seperti left, top, atau margin) tetap membebani main thread, mau dipanggil lewat setInterval ataupun requestAnimationFrame.
+- **Perbaikan yang benar menurut tim:**
+  Animasi teks berjalan dipindahkan ke CSS murni dengan keyframes dan transform: translateX (commit 369d6d7). Karena transform dikerjakan langsung oleh compositor thread di GPU, main thread tidak perlu menghitung layout atau repaint setiap frame saat halaman diam. Timer fired saat idle turun drastis dari 265 menjadi 11 kali.
 
 ---
 

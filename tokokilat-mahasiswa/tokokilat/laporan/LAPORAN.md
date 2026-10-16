@@ -127,14 +127,17 @@ Diurutkan berdasarkan dampak bagi pengguna.
 
 ## 7. Pembagian kerja dan pernyataan penggunaan AI
 
-### Pernyataan penggunaan AI
-Alat yang digunakan: Antigravity, Claude (termasuk Claude Code untuk bagian S2, S3, S5).
-AI digunakan sebagai asisten coding untuk membantu pembacaan data trace DevTools, penulisan sintaks kode fixing, brainstorming dengan anggota tim, serta penyusunan draf narasi teknis di PREDIKSI.md dan LAPORAN.md. Seluruh perumusan hipotesis awal, perekaman trace di DevTools, dan pengujian dikerjakan secara mandiri oleh tiap anggota tim sesuai pembagian kerja.
-
 ### Pembagian kerja
-- Ihsan: TK-1057 (P-02), TK-1070 (P-04), TK-1078 (P-05) dengan tes S0, S4, dan S6
-- Fariz Dhifa Fakhriza (241524040): TK-1041 (P-01), TK-1081 (P-06), pengecekan dugaan Rudi no. 1 dan 3 (P-08)
-- Lukman Ahmad (241524050): TK-1063 (P-03), TK-1044 dan TK-1052 (P-07)
+- Ihsan Fauzi (241524048): TK-1057 (P-02), TK-1070 (P-04), TK-1078 (P-05) dengan tes S0, S4, dan S6, serta audit AI A-05 dan A-06
+- Fariz Dhifa Fakhriza (241524040): TK-1041 (P-01), TK-1081 (P-06), pengecekan dugaan Rudi no. 1 dan 3 (P-08), serta audit AI A-01 dan A-02
+- Lukman Ahmad (241524050): TK-1063 (P-03), TK-1044 dan TK-1052 (P-07), serta audit AI A-03 dan A-04
+
+### Pernyataan penggunaan AI bagian S0, S4, dan S6 (Ihsan Fauzi)
+Alat yang digunakan: Antigravity, Claude.
+
+AI digunakan sebagai asisten coding untuk membantu pembacaan data trace DevTools, penulisan sintaks kode fixing, brainstorming dengan anggota tim, serta penyusunan draf narasi teknis di LAPORAN.md, AUDIT-AI.md dan merapikan sedikit kata-kata di PREDIKSI.md.
+
+Yang dikerjakan sendiri: Perumusan hipotesis awal, perekaman trace di DevTools panel Performance, pengambilan tangkapan layar, pengujian serta pemeriksaan hasil setiap putaran (termasuk verifikasi metrik di alat ukur).
 
 ### Pernyataan penggunaan AI bagian S2, S3, dan S5 (Lukman Ahmad)
 Alat yang digunakan: Claude Code (model Claude Opus).
